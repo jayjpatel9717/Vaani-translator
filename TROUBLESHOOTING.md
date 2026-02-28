@@ -224,7 +224,7 @@ ps aux | grep Vaani
 
 2. Restart the app:
 ```bash
-killall Vaani
+killall SaarasTranslator
 open /Applications/Vaani.app
 ```
 

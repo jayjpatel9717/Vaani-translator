@@ -120,7 +120,7 @@ class AudioRecorder: NSObject, ObservableObject {
     }
 }
 
-enum RecordingError: Error {
+enum RecordingError: Error, LocalizedError {
     case engineInitFailed
     case noInputNode
     case fileCreationFailed

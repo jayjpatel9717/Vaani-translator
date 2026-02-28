@@ -267,7 +267,7 @@ struct MainView: View {
                             .padding(.horizontal, 20)
 
                             VStack(spacing: 0) {
-                                ForEach(Array(viewModel.history.prefix(3).enumerated()), id: \.element.id) { index, item in
+                                ForEach(Array(viewModel.history.enumerated()), id: \.element.id) { index, item in
                                     if index > 0 {
                                         Divider().padding(.leading, 12)
                                     }

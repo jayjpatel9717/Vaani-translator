@@ -61,12 +61,6 @@ rm -rf build
 rm -rf *.app
 rm -rf *.dmg
 
-# Clear Swift package cache if build previously failed
-if [ -d ".build" ]; then
-    echo "Clearing package cache..."
-    swift package clean
-    swift package reset
-fi
 
 # Resolve dependencies first
 echo ""
@@ -94,10 +88,12 @@ echo "Building Vaani..."
 echo ""
 
 # Try universal build first, fallback to native architecture
-if swift build -c release --arch arm64 --arch x86_64 2>/dev/null; then
+# Use pipefail so we get swift build's exit code, not tail's
+set -o pipefail
+if swift build -c release --arch arm64 --arch x86_64 2>&1 | tail -5; then
     echo -e "${GREEN}✅ Universal binary built (Intel + Apple Silicon)${NC}"
     BUILD_PATH=".build/apple/Products/Release/SaarasTranslator"
-elif swift build -c release 2>/dev/null; then
+elif swift build -c release 2>&1 | tail -20; then
     echo -e "${GREEN}✅ Native binary built${NC}"
     BUILD_PATH=".build/release/SaarasTranslator"
 else
