@@ -5,7 +5,7 @@ import SwiftUI
 @MainActor
 class TranslatorViewModel: ObservableObject {
     @Published var targetLanguage: Language = .hindi
-    @Published var selectedMode: TranslationMode = .translate
+    @Published var selectedMode: TranslationMode = .translit
     @Published var isRecording = false
     @Published var isProcessing = false
     @Published var lastResult: String = ""
