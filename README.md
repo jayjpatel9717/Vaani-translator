@@ -90,7 +90,7 @@ That's it. No windows to manage, no app switching. Works from any app.
 
 ### Security
 
-- **API key stored locally** — saved in app preferences, never sent anywhere except Sarvam AI
+- **API key in macOS Keychain** — never stored in plaintext
 - **Audio in protected directory** — `chmod 700`, deleted after processing
 - **TLS certificate validation** — pinning-ready infrastructure
 - **Client-side rate limiting** — 30 requests per minute
@@ -170,7 +170,7 @@ Sources/
   Services/
     AudioRecorder.swift          # AVAudioEngine recording
     SaarasAPIClient.swift        # Sarvam AI API client with TLS validation
-    KeychainManager.swift        # API key storage
+    KeychainManager.swift        # macOS Keychain storage
     PasteboardManager.swift      # Multi-strategy auto-paste
     FnKeyMonitor.swift           # CGEventTap fn key listener
   Theme/
@@ -183,7 +183,7 @@ Sources/
 
 ## Security
 
-- API keys stored in app preferences (never sent anywhere except Sarvam AI API)
+- API keys stored in macOS Keychain (not plaintext, not UserDefaults)
 - Audio files in `~/Library/Application Support/com.vaani.app/recordings` with `chmod 700`
 - Audio deleted immediately after API processing
 - TLS certificate validation with pinning-ready infrastructure
@@ -200,6 +200,7 @@ Sources/
 - Swift 5.9 / SwiftUI
 - AVFoundation
 - [KeyboardShortcuts](https://github.com/sindresorhus/KeyboardShortcuts) v1.14.0 — by Sindre Sorhus
+- [KeychainAccess](https://github.com/kishikawakatsumi/KeychainAccess) v4.2.2 — by kishikawakatsumi
 - [Sarvam AI](https://sarvam.ai) — Saaras v3 (STT) + Sarvam Translate v1
 
 ---

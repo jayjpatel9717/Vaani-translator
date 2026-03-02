@@ -84,7 +84,7 @@ struct SettingsView: View {
                         Circle()
                             .fill(viewModel.hasAPIKey() ? theme.statusSuccess : theme.statusWarning)
                             .frame(width: 6, height: 6)
-                        Text("Saved")
+                        Text("Keychain")
                             .font(.system(size: 9))
                             .foregroundColor(theme.sectionHeaderColor)
                     }
