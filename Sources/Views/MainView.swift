@@ -81,15 +81,20 @@ struct MainView: View {
 
             // Accessibility warning
             if !viewModel.accessibilityGranted {
-                Button(action: { PasteboardManager.requestAccessibilityPermission() }) {
+                Button(action: {
+                    // Open System Settings > Privacy > Accessibility directly
+                    if let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility") {
+                        NSWorkspace.shared.open(url)
+                    }
+                }) {
                     HStack(spacing: 6) {
                         Image(systemName: "exclamationmark.triangle.fill")
                             .foregroundColor(theme.statusWarning)
                             .font(.system(size: 11))
-                        Text("Enable Accessibility for auto-paste")
+                        Text("Grant Accessibility in System Settings")
                             .font(.system(size: 11))
                         Spacer()
-                        Text("Fix")
+                        Text("Open")
                             .font(.system(size: 11, weight: .medium))
                             .foregroundColor(.accentColor)
                     }

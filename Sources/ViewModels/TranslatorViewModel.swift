@@ -52,8 +52,12 @@ class TranslatorViewModel: ObservableObject {
             }
         }
 
-        // Load fn key preference
-        useFnKey = UserDefaults.standard.bool(forKey: "useFnKey")
+        // Load fn key preference (default: enabled for new installs)
+        if UserDefaults.standard.object(forKey: "useFnKey") == nil {
+            useFnKey = true
+        } else {
+            useFnKey = UserDefaults.standard.bool(forKey: "useFnKey")
+        }
 
         // Load appearance preference
         if let saved = UserDefaults.standard.string(forKey: "appearanceMode"),
