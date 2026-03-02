@@ -87,6 +87,16 @@ enum TranslationMode: String, CaseIterable, Identifiable {
         }
     }
 
+    var shortName: String {
+        switch self {
+        case .transcribe: return "STT"
+        case .translate: return "Translate"
+        case .translit: return "Translit"
+        case .codemix: return "Mix"
+        case .verbatim: return "Verbatim"
+        }
+    }
+
     var needsTargetLanguage: Bool {
         self == .translate
     }

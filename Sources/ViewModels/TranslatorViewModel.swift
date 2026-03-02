@@ -195,20 +195,21 @@ class TranslatorViewModel: ObservableObject {
                         self.recentRequests.append(Date())
                     }
 
-                    // Save to history
-                    let item = HistoryItem(
-                        text: result.text,
-                        toLang: lang,
-                        mode: mode,
-                        date: Date()
-                    )
-                    self.history.insert(item, at: 0)
-                    if self.history.count > 3 {
-                        self.history = Array(self.history.prefix(3))
-                    }
+                    // Save to history + auto-paste only if non-empty
+                    if !result.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                        let item = HistoryItem(
+                            text: result.text,
+                            toLang: lang,
+                            mode: mode,
+                            date: Date()
+                        )
+                        self.history.insert(item, at: 0)
+                        if self.history.count > 5 {
+                            self.history = Array(self.history.prefix(5))
+                        }
 
-                    // Auto-paste the result
-                    PasteboardManager.pasteText(result.text)
+                        PasteboardManager.pasteText(result.text)
+                    }
                 }
 
                 // 3. Cleanup original + chunk files

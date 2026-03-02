@@ -209,7 +209,7 @@ cat > "$APP_NAME/Contents/Info.plist" << 'EOF'
     <key>CFBundleShortVersionString</key>
     <string>1.0.0</string>
     <key>CFBundleVersion</key>
-    <string>2</string>
+    <string>1</string>
     <key>LSMinimumSystemVersion</key>
     <string>13.0</string>
     <key>LSUIElement</key>
@@ -217,7 +217,7 @@ cat > "$APP_NAME/Contents/Info.plist" << 'EOF'
     <key>NSMicrophoneUsageDescription</key>
     <string>Vaani needs microphone access to record your voice for translation.</string>
     <key>NSHumanReadableCopyright</key>
-    <string>Copyright 2024. All rights reserved.</string>
+    <string>Copyright 2026 Jay Patel. All rights reserved.</string>
 </dict>
 </plist>
 EOF

@@ -4,7 +4,6 @@ struct MainView: View {
     @EnvironmentObject var viewModel: TranslatorViewModel
     @Environment(\.colorScheme) private var colorScheme
     @State private var pulseScale: CGFloat = 1.0
-    @State private var showCopied = false
 
     private var theme: AppTheme { AppTheme(colorScheme) }
 
@@ -55,7 +54,7 @@ struct MainView: View {
 
     var mainContent: some View {
         VStack(spacing: 0) {
-            // Header + Status (compact)
+            // Header
             HStack {
                 Text("Vaani")
                     .font(.system(size: 15, weight: .semibold))
@@ -92,7 +91,6 @@ struct MainView: View {
             // Accessibility warning
             if !viewModel.accessibilityGranted {
                 Button(action: {
-                    // Open System Settings > Privacy > Accessibility directly
                     if let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility") {
                         NSWorkspace.shared.open(url)
                     }
@@ -121,14 +119,15 @@ struct MainView: View {
                 .padding(.top, 8)
             }
 
+            // Main scrollable content
             ScrollView {
-                VStack(spacing: 16) {
-                    // Mic hero (compact)
+                VStack(spacing: 12) {
+                    // Mic hero
                     ZStack {
                         if viewModel.isRecording {
                             Circle()
                                 .stroke(theme.recordingPulse, lineWidth: 1.5)
-                                .frame(width: 60, height: 60)
+                                .frame(width: 56, height: 56)
                                 .scaleEffect(pulseScale)
                                 .opacity(2 - pulseScale)
                                 .onAppear {
@@ -141,22 +140,22 @@ struct MainView: View {
 
                         Circle()
                             .fill(viewModel.isRecording ? theme.recordingGradient : theme.brandGradient)
-                            .frame(width: 48, height: 48)
+                            .frame(width: 44, height: 44)
                             .shadow(
                                 color: viewModel.isRecording ? theme.recordingShadow : theme.brandShadow,
                                 radius: theme.shadowRadius
                             )
 
                         Image(systemName: viewModel.isRecording ? "waveform" : "mic.fill")
-                            .font(.system(size: 20, weight: .medium))
+                            .font(.system(size: 18, weight: .medium))
                             .foregroundColor(.white)
                             .scaleEffect(viewModel.isRecording ? 1.0 + CGFloat(viewModel.audioLevel * 0.3) : 1.0)
                             .animation(.easeInOut(duration: 0.1), value: viewModel.audioLevel)
                     }
-                    .padding(.top, 12)
+                    .padding(.top, 8)
 
-                    // Controls row
-                    VStack(spacing: 8) {
+                    // Controls
+                    VStack(spacing: 6) {
                         HStack {
                             Text("Mode")
                                 .font(.system(size: 11, weight: .medium))
@@ -189,52 +188,71 @@ struct MainView: View {
                     }
                     .padding(.horizontal, 16)
 
-                    // Result
-                    if !viewModel.lastResult.isEmpty {
-                        VStack(alignment: .leading, spacing: 8) {
+                    // Recent results
+                    if !viewModel.history.isEmpty {
+                        VStack(alignment: .leading, spacing: 0) {
                             HStack {
-                                Text("Result")
+                                Text("Recent")
                                     .font(.system(size: 11, weight: .medium))
                                     .foregroundColor(theme.sectionHeaderColor)
                                 Spacer()
-
-                                Button(action: {
-                                    NSPasteboard.general.clearContents()
-                                    NSPasteboard.general.setString(viewModel.lastResult, forType: .string)
-                                    showCopied = true
-                                    DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) { showCopied = false }
-                                }) {
-                                    Image(systemName: showCopied ? "checkmark" : "doc.on.doc")
-                                        .font(.system(size: 12))
-                                        .foregroundColor(showCopied ? theme.statusSuccess : .secondary)
-                                }
-                                .buttonStyle(.plain)
-                                .help("Copy to clipboard")
-
-                                Button(action: {
-                                    PasteboardManager.pasteText(viewModel.lastResult)
-                                }) {
-                                    Image(systemName: "doc.on.clipboard")
-                                        .font(.system(size: 12))
+                                Button(action: { viewModel.history.removeAll() }) {
+                                    Text("Clear")
+                                        .font(.system(size: 10))
                                         .foregroundColor(.secondary)
                                 }
                                 .buttonStyle(.plain)
-                                .help("Paste at cursor")
                             }
+                            .padding(.horizontal, 16)
+                            .padding(.bottom, 6)
 
-                            Text(viewModel.lastResult)
-                                .font(.system(size: 16))
-                                .textSelection(.enabled)
-                                .frame(maxWidth: .infinity, alignment: .leading)
+                            VStack(spacing: 0) {
+                                ForEach(viewModel.history) { (item: HistoryItem) in
+                                    VStack(spacing: 0) {
+                                        HStack(spacing: 8) {
+                                            Text(item.text)
+                                                .font(.system(size: 12))
+                                                .lineLimit(1)
+                                                .truncationMode(.tail)
+                                                .foregroundColor(.primary)
+                                                .frame(maxWidth: .infinity, alignment: .leading)
+
+                                            Text(item.mode.shortName)
+                                                .font(.system(size: 9, weight: .medium))
+                                                .foregroundColor(theme.brandBlue)
+                                                .padding(.horizontal, 5)
+                                                .padding(.vertical, 2)
+                                                .background(theme.brandBlue.opacity(0.12))
+                                                .cornerRadius(3)
+
+                                            Button(action: {
+                                                NSPasteboard.general.clearContents()
+                                                NSPasteboard.general.setString(item.text, forType: .string)
+                                            }) {
+                                                Image(systemName: "doc.on.doc")
+                                                    .font(.system(size: 10))
+                                                    .foregroundColor(.secondary)
+                                            }
+                                            .buttonStyle(.plain)
+                                        }
+                                        .padding(.horizontal, 10)
+                                        .padding(.vertical, 7)
+
+                                        if item.id != viewModel.history.last?.id {
+                                            Divider()
+                                                .padding(.leading, 10)
+                                        }
+                                    }
+                                }
+                            }
+                            .background(theme.cardBackground)
+                            .overlay(
+                                RoundedRectangle(cornerRadius: 8)
+                                    .stroke(theme.cardBorder, lineWidth: 1)
+                            )
+                            .cornerRadius(8)
+                            .padding(.horizontal, 16)
                         }
-                        .padding(12)
-                        .background(theme.cardBackground)
-                        .overlay(
-                            RoundedRectangle(cornerRadius: 10)
-                                .stroke(theme.cardBorder, lineWidth: 1)
-                        )
-                        .cornerRadius(10)
-                        .padding(.horizontal, 16)
                     }
 
                     // Error
@@ -244,7 +262,7 @@ struct MainView: View {
                                 .foregroundColor(theme.statusError)
                                 .font(.system(size: 12))
                             Text(error)
-                                .font(.system(size: 12))
+                                .font(.system(size: 11))
                                 .foregroundColor(.secondary)
                             Spacer()
                             Button(action: { viewModel.lastError = nil }) {
@@ -254,7 +272,7 @@ struct MainView: View {
                             }
                             .buttonStyle(.plain)
                         }
-                        .padding(10)
+                        .padding(8)
                         .frame(maxWidth: .infinity, alignment: .leading)
                         .background(theme.errorTint)
                         .overlay(
@@ -264,12 +282,29 @@ struct MainView: View {
                         .cornerRadius(8)
                         .padding(.horizontal, 16)
                     }
-
                 }
-                .padding(.bottom, 10)
+                .padding(.bottom, 8)
             }
+
+            // Bottom bar: appearance toggle
+            Divider()
+                .padding(.horizontal, 12)
+            HStack(spacing: 0) {
+                Spacer()
+                ForEach(AppearanceMode.allCases) { mode in
+                    Button(action: { viewModel.appearanceMode = mode }) {
+                        Image(systemName: mode.icon)
+                            .font(.system(size: 10))
+                            .foregroundColor(viewModel.appearanceMode == mode ? theme.brandBlue : Color.secondary.opacity(0.5))
+                    }
+                    .buttonStyle(.plain)
+                    .frame(width: 24, height: 24)
+                }
+            }
+            .padding(.horizontal, 12)
+            .padding(.bottom, 4)
         }
-        .frame(width: 340, height: 400)
+        .frame(width: 320, height: 380)
         .clipped()
     }
 }

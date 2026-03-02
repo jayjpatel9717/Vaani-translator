@@ -190,7 +190,7 @@ Get an API key at: https://dashboard.sarvam.ai/key-management
 
 **Solutions:**
 
-1. Wait a minute and try again (rate limit: 10 requests/minute)
+1. Wait a minute and try again (rate limit: 30 requests/minute)
 2. Check your API quota at sarvam.ai
 3. Check internet connection
 4. Check https://status.sarvam.ai (if available)

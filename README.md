@@ -62,7 +62,7 @@ Requires Xcode Command Line Tools and Swift 5.9+.
 1. **Launch** — a mic icon appears in your menubar
 2. **Add API key** — click mic icon > gear icon > paste your [Sarvam AI](https://dashboard.sarvam.ai/key-management) API key > Save
 3. **Grant permissions** — allow Microphone and Accessibility when prompted
-4. **Speak** — hold `Ctrl+Space`, say something, release — text appears at your cursor
+4. **Speak** — hold `fn` (globe key) or `Ctrl+Space`, say something, release — text appears at your cursor
 
 That's it. No windows to manage, no app switching. Works from any app.
 
@@ -74,15 +74,17 @@ That's it. No windows to manage, no app switching. Works from any app.
 
 - **23 Indian languages** — Hindi, Tamil, Telugu, Bengali, Marathi, Gujarati, Kannada, Malayalam, Odia, Punjabi, Assamese, Urdu, Kashmiri, Konkani, Maithili, Manipuri, Nepali, Santali, Sindhi, Dogri, Bodo, Sanskrit, and English
 - **5 translation modes** — Translate, Transcribe, Transliterate, Code-mix, Verbatim
-- **Auto source detection** — speak any language, Vaani figures it out
-- **Global hotkeys** — `Ctrl+Space` or `fn` (globe key), works from any app
-- **Auto-paste** — translated text pastes directly at your cursor via `Cmd+V` simulation
-- **Translation history** — last 3 results for quick copy
+- **Auto source detection** — speak any language, Vaani detects it automatically
+- **Unlimited recording** — speak as long as you want, audio is chunked and processed in parallel
+- **Direct translation** — source language to target directly, no English middleman
+- **Global hotkeys** — `fn` (globe key) enabled by default, or `Ctrl+Space`, works from any app
+- **Smart auto-paste** — translated text inserts at cursor via Accessibility API with multi-strategy fallback
+- **Translation history** — last 5 results with quick copy buttons
 
 ### Experience
 
-- **Dark & Light theme** — follows your system appearance, or force Light/Dark from Settings
-- **Compact UI** — small 340px popover that stays out of your way
+- **Dark & Light theme** — follows system appearance, or toggle from the main screen
+- **Compact UI** — small 320px popover that stays out of your way
 - **Live audio visualization** — waveform feedback while recording
 - **Native SwiftUI** — no Electron, no web views, minimal memory footprint
 
@@ -91,8 +93,9 @@ That's it. No windows to manage, no app switching. Works from any app.
 - **API key in macOS Keychain** — never stored in plaintext
 - **Audio in protected directory** — `chmod 700`, deleted after processing
 - **TLS certificate validation** — pinning-ready infrastructure
-- **Client-side rate limiting** — 10 requests per minute
+- **Client-side rate limiting** — 30 requests per minute
 - **Sanitized errors** — no server details leaked to UI
+- **No telemetry** — zero data collection, fully offline except API calls
 
 ---
 
@@ -114,8 +117,8 @@ Default mode is **Transliterate** — great for chatting in Hinglish.
 
 | Shortcut | Action |
 |----------|--------|
-| `Ctrl+Space` (default) | Hold to record, release to process |
-| `fn` (globe key) | Hold to record (enable in Settings) |
+| `fn` (globe key) | Hold to record, release to process (default) |
+| `Ctrl+Space` | Hold to record, release to process |
 
 Customize your shortcut in Settings > Shortcuts.
 
@@ -141,7 +144,7 @@ Customize your shortcut in Settings > Shortcuts.
 | Permission | Why |
 |-----------|-----|
 | **Microphone** | Record your voice |
-| **Accessibility** | Auto-paste via `Cmd+V` simulation and global hotkey monitoring |
+| **Accessibility** | Auto-paste at cursor and global hotkey monitoring |
 
 If hotkeys stop working after a rebuild, reset Accessibility:
 
@@ -163,15 +166,17 @@ Sources/
     TranslatorViewModel.swift    # State, recording, API calls, rate limiting
   Views/
     MainView.swift               # Main popover UI
-    SettingsView.swift            # Settings (API, shortcuts, appearance)
+    SettingsView.swift            # Settings (API key, shortcuts)
   Services/
     AudioRecorder.swift          # AVAudioEngine recording
     SaarasAPIClient.swift        # Sarvam AI API client with TLS validation
     KeychainManager.swift        # macOS Keychain storage
-    PasteboardManager.swift      # Clipboard + Cmd+V simulation
+    PasteboardManager.swift      # Multi-strategy auto-paste
     FnKeyMonitor.swift           # CGEventTap fn key listener
   Theme/
     AppTheme.swift               # Adaptive design tokens (dark/light)
+  Utils/
+    AudioChunker.swift           # Audio format conversion + chunking
 ```
 
 ---
@@ -182,9 +187,11 @@ Sources/
 - Audio files in `~/Library/Application Support/com.vaani.app/recordings` with `chmod 700`
 - Audio deleted immediately after API processing
 - TLS certificate validation with pinning-ready infrastructure
-- Client-side rate limiting (10 requests/minute)
+- Client-side rate limiting (30 requests/minute)
 - Thread-safe fn key state management with NSLock
 - Sanitized error messages (no server response details exposed)
+- No debug logging in release builds
+- No telemetry or analytics
 
 ---
 
@@ -194,7 +201,7 @@ Sources/
 - AVFoundation
 - [KeyboardShortcuts](https://github.com/sindresorhus/KeyboardShortcuts) v1.14.0 — by Sindre Sorhus
 - [KeychainAccess](https://github.com/kishikawakatsumi/KeychainAccess) v4.2.2 — by kishikawakatsumi
-- [Sarvam AI](https://sarvam.ai) — Saaras v3 (STT) + Mayura v1 (Translation)
+- [Sarvam AI](https://sarvam.ai) — Saaras v3 (STT) + Sarvam Translate v1
 
 ---
 

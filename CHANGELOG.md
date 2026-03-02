@@ -11,18 +11,21 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). Version
 ### Added
 - **23 Indian languages** — Hindi, Bengali, Telugu, Marathi, Tamil, Gujarati, Kannada, Malayalam, Odia, Punjabi, Assamese, Urdu, Kashmiri, Konkani, Maithili, Manipuri, Nepali, Santali, Sindhi, Dogri, Bodo, Sanskrit, English
 - **5 translation modes** — Transcribe, Translate, Transliterate, Code-mix, Verbatim
+- **Unlimited recording** — audio chunked into 28s segments, processed in parallel
+- **Direct translation** — source language to target directly, no English middleman for non-English targets
 - **Global hotkeys** — configurable keyboard shortcut (default `Ctrl+Space`) and optional `fn` (globe) key enabled by default
-- **Auto-paste** — translated text pastes at cursor via `Cmd+V` simulation
-- **Translation history** — last 3 results with quick copy buttons
+- **Smart auto-paste** — multi-strategy insertion at cursor (Accessibility API direct insert, menu-based paste, CGEvent fallback)
+- **Translation history** — last 5 results with quick copy buttons and mode badge
 - **Auto source detection** — speaks any language, API detects automatically
-- **Dark & Light theme system** — adaptive colors, gradients, and shadows that respond to macOS appearance
-- **Appearance selector** in Settings — choose System, Light, or Dark mode override
+- **Dark & Light theme** — adaptive colors with appearance toggle on main screen (System/Light/Dark)
 - **API key validation** — status dot shows green/yellow/red based on actual API health
-- **Compact menubar UI** — 340x400 popover with merged header, 48px mic hero, 16pt result text
+- **Compact menubar UI** — 320x380 popover with mic hero, status header, and history
 - **Secure API key storage** in macOS Keychain
-- **Audio recording** with AVAudioEngine, files in `chmod 700` protected directory
+- **Audio recording** with AVAudioEngine in native mic format, auto-converted to 16kHz mono
 - **TLS certificate validation** with pinning-ready infrastructure
-- **Client-side rate limiting** — 10 requests per minute
+- **Client-side rate limiting** — 30 requests per minute
+- **Sanitized error messages** — no server details leaked to UI
+- **No debug logging in release builds** — paste operations log only in DEBUG
 - **Universal binary** — runs natively on both Apple Silicon and Intel Macs
 - **Native SwiftUI menubar app** — no Electron, no web views
 - **Homebrew distribution** — `brew install --cask vaani`

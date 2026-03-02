@@ -20,32 +20,53 @@ class PasteboardManager {
         pasteboard.clearContents()
         pasteboard.setString(text, forType: .string)
 
-        guard AXIsProcessTrusted() else { return }
+        guard AXIsProcessTrusted() else {
+            log("SKIP: no accessibility permission")
+            return
+        }
 
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) {
-            // Strategy 1: Direct text insertion via Accessibility API
-            if insertTextAtCursor(text) { return }
+            let app = NSWorkspace.shared.frontmostApplication
+            log("Frontmost: \(app?.localizedName ?? "nil") pid=\(app?.processIdentifier ?? 0)")
+
+            // Strategy 1: Direct text insertion via AXSelectedText
+            let s1 = insertTextAtCursor(text)
+            log("Strategy 1 (AXSelectedText): \(s1 ? "OK" : "FAIL")")
+            if s1 { return }
 
             // Strategy 2: Trigger Paste menu item via Accessibility API
-            if performPasteViaMenu() { return }
+            let s2 = performPasteViaMenu()
+            log("Strategy 2 (Menu Paste): \(s2 ? "OK" : "FAIL")")
+            if s2 { return }
 
-            // Strategy 3: CGEvent Cmd+V simulation (last resort)
+            // Strategy 3: CGEvent Cmd+V (session level, bypasses HID taps)
+            log("Strategy 3 (CGEvent cgSessionEventTap)")
             simulateCmdV()
         }
     }
 
     // MARK: - Strategy 1: Direct text insertion
 
-    /// Inserts text at cursor by setting AXSelectedText on the focused element
     private static func insertTextAtCursor(_ text: String) -> Bool {
         let systemWide = AXUIElementCreateSystemWide()
         var focusedElement: AnyObject?
 
-        guard AXUIElementCopyAttributeValue(
+        let copyResult = AXUIElementCopyAttributeValue(
             systemWide,
             kAXFocusedUIElementAttribute as CFString,
             &focusedElement
-        ) == .success, let element = focusedElement else {
+        )
+
+        guard copyResult == .success, let element = focusedElement else {
+            log("  AX focused element: not found (\(copyResult.rawValue))")
+            return false
+        }
+
+        // Check if element supports AXSelectedText (is it writable?)
+        var writable: DarwinBoolean = false
+        AXUIElementIsAttributeSettable(element as! AXUIElement, kAXSelectedTextAttribute as CFString, &writable)
+        guard writable.boolValue else {
+            log("  AXSelectedText: not writable")
             return false
         }
 
@@ -61,7 +82,6 @@ class PasteboardManager {
 
     // MARK: - Strategy 2: Menu-based paste
 
-    /// Finds and clicks the Paste menu item (Cmd+V) in the frontmost app
     private static func performPasteViaMenu() -> Bool {
         guard let frontApp = NSWorkspace.shared.frontmostApplication else { return false }
         let appElement = AXUIElementCreateApplication(frontApp.processIdentifier)
@@ -69,15 +89,16 @@ class PasteboardManager {
         var menuBar: AnyObject?
         guard AXUIElementCopyAttributeValue(
             appElement, kAXMenuBarAttribute as CFString, &menuBar
-        ) == .success else { return false }
+        ) == .success else {
+            log("  No menu bar")
+            return false
+        }
 
-        // Get top-level menus
         var menus: AnyObject?
         guard AXUIElementCopyAttributeValue(
             menuBar as! AXUIElement, kAXChildrenAttribute as CFString, &menus
         ) == .success, let menuArray = menus as? [AXUIElement] else { return false }
 
-        // Search each menu for Paste item (identified by Cmd+V shortcut)
         for menu in menuArray {
             var submenuList: AnyObject?
             AXUIElementCopyAttributeValue(menu, kAXChildrenAttribute as CFString, &submenuList)
@@ -89,48 +110,52 @@ class PasteboardManager {
                 guard let itemArray = items as? [AXUIElement] else { continue }
 
                 for item in itemArray {
-                    // Match by keyboard shortcut character "v" (locale-independent)
                     var cmdChar: AnyObject?
                     AXUIElementCopyAttributeValue(
                         item, kAXMenuItemCmdCharAttribute as CFString, &cmdChar
                     )
 
                     if let charStr = cmdChar as? String, charStr.lowercased() == "v" {
-                        // Verify it's plain Cmd+V (no extra modifiers like Shift/Option)
                         var modifiers: AnyObject?
                         AXUIElementCopyAttributeValue(
                             item, kAXMenuItemCmdModifiersAttribute as CFString, &modifiers
                         )
                         let mod = modifiers as? Int ?? 0
-                        if mod == 0 { // 0 = only Command key
-                            return AXUIElementPerformAction(
-                                item, kAXPressAction as CFString
-                            ) == .success
+                        if mod == 0 {
+                            let r = AXUIElementPerformAction(item, kAXPressAction as CFString)
+                            log("  Paste menu: action result \(r == .success ? "OK" : "FAIL(\(r.rawValue))")")
+                            return r == .success
                         }
                     }
                 }
             }
         }
 
+        log("  Paste menu item not found")
         return false
     }
 
     // MARK: - Strategy 3: CGEvent Cmd+V
 
-    /// Simulates Cmd+V via CGEvent as last resort
     private static func simulateCmdV() {
-        DispatchQueue.global(qos: .userInteractive).async {
-            guard let vDown = CGEvent(keyboardEventSource: nil, virtualKey: 0x09, keyDown: true),
-                  let vUp = CGEvent(keyboardEventSource: nil, virtualKey: 0x09, keyDown: false) else {
-                return
-            }
-
-            vDown.flags = .maskCommand
-            vUp.flags = .maskCommand
-
-            vDown.post(tap: .cghidEventTap)
-            Thread.sleep(forTimeInterval: 0.05)
-            vUp.post(tap: .cghidEventTap)
+        // Post to cgSessionEventTap (bypasses our HID-level fn key monitor tap)
+        guard let vDown = CGEvent(keyboardEventSource: nil, virtualKey: 0x09, keyDown: true),
+              let vUp = CGEvent(keyboardEventSource: nil, virtualKey: 0x09, keyDown: false) else {
+            return
         }
+
+        vDown.flags = .maskCommand
+        vUp.flags = .maskCommand
+
+        vDown.post(tap: .cgSessionEventTap)
+        vUp.post(tap: .cgSessionEventTap)
+    }
+
+    // MARK: - Logging (debug builds only)
+
+    private static func log(_ message: String) {
+        #if DEBUG
+        NSLog("[Vaani Paste] %@", message)
+        #endif
     }
 }
