@@ -2,29 +2,23 @@ import SwiftUI
 
 struct MainView: View {
     @EnvironmentObject var viewModel: TranslatorViewModel
+    @Environment(\.colorScheme) private var colorScheme
     @State private var pulseScale: CGFloat = 1.0
     @State private var showCopied = false
 
-    // Brand gradient (blue → warm, matching icon)
-    private let brandGradient = LinearGradient(
-        colors: [Color(red: 0.35, green: 0.45, blue: 0.95), Color(red: 0.85, green: 0.5, blue: 0.35)],
-        startPoint: .topLeading,
-        endPoint: .bottomTrailing
-    )
-
-    private let recordingGradient = LinearGradient(
-        colors: [.red, .orange],
-        startPoint: .topLeading,
-        endPoint: .bottomTrailing
-    )
+    private var theme: AppTheme { AppTheme(colorScheme) }
 
     var body: some View {
-        if viewModel.showSettings {
-            SettingsView()
-                .environmentObject(viewModel)
-        } else {
-            mainContent
+        Group {
+            if viewModel.showSettings {
+                SettingsView()
+                    .environmentObject(viewModel)
+            } else {
+                mainContent
+            }
         }
+        .preferredColorScheme(viewModel.appearanceMode.preferredColorScheme)
+        .animation(.easeInOut(duration: 0.25), value: colorScheme)
     }
 
     private var statusText: String {
@@ -39,38 +33,26 @@ struct MainView: View {
         }
     }
 
+    private var statusDotColor: Color {
+        if viewModel.isRecording {
+            return theme.statusError
+        } else if viewModel.hasAPIKey() {
+            return theme.statusSuccess
+        } else {
+            return theme.statusWarning
+        }
+    }
+
     var mainContent: some View {
         VStack(spacing: 0) {
-            // Header
-            VStack(spacing: 1) {
-                HStack {
-                    VStack(alignment: .leading, spacing: 1) {
-                        Text("Vaani")
-                            .font(.system(size: 16, weight: .semibold))
-                        Text("Translate & Transcribe")
-                            .font(.system(size: 11))
-                            .foregroundColor(.secondary)
-                    }
+            // Header + Status (compact)
+            HStack {
+                Text("Vaani")
+                    .font(.system(size: 15, weight: .semibold))
 
-                    Spacer()
-
-                    Button(action: { viewModel.showSettings = true }) {
-                        Image(systemName: "gearshape")
-                            .font(.system(size: 14))
-                            .foregroundColor(.secondary)
-                    }
-                    .buttonStyle(.plain)
-                }
-            }
-            .padding(.horizontal, 20)
-            .padding(.top, 14)
-            .padding(.bottom, 10)
-
-            // Status line
-            HStack(spacing: 6) {
                 Circle()
-                    .fill(viewModel.isRecording ? Color.red : (viewModel.hasAPIKey() ? Color.green : Color.orange))
-                    .frame(width: 6, height: 6)
+                    .fill(statusDotColor)
+                    .frame(width: 7, height: 7)
 
                 if viewModel.isProcessing {
                     ProgressView()
@@ -78,22 +60,31 @@ struct MainView: View {
                 }
 
                 Text(statusText)
-                    .font(.system(size: 12))
+                    .font(.system(size: 11))
                     .foregroundColor(.secondary)
+
+                Spacer()
+
+                Button(action: { viewModel.showSettings = true }) {
+                    Image(systemName: "gearshape")
+                        .font(.system(size: 13))
+                        .foregroundColor(.secondary)
+                }
+                .buttonStyle(.plain)
             }
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .padding(.horizontal, 20)
-            .padding(.bottom, 12)
+            .padding(.horizontal, 16)
+            .padding(.top, 12)
+            .padding(.bottom, 10)
 
             Divider()
-                .padding(.horizontal, 16)
+                .padding(.horizontal, 12)
 
             // Accessibility warning
             if !viewModel.accessibilityGranted {
                 Button(action: { PasteboardManager.requestAccessibilityPermission() }) {
                     HStack(spacing: 6) {
                         Image(systemName: "exclamationmark.triangle.fill")
-                            .foregroundColor(.orange)
+                            .foregroundColor(theme.statusWarning)
                             .font(.system(size: 11))
                         Text("Enable Accessibility for auto-paste")
                             .font(.system(size: 11))
@@ -103,22 +94,26 @@ struct MainView: View {
                             .foregroundColor(.accentColor)
                     }
                     .padding(8)
-                    .background(Color.orange.opacity(0.08))
+                    .background(theme.warningTint)
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 8)
+                            .stroke(theme.statusWarning.opacity(0.2), lineWidth: 1)
+                    )
                     .cornerRadius(8)
                 }
                 .buttonStyle(.plain)
-                .padding(.horizontal, 20)
-                .padding(.top, 10)
+                .padding(.horizontal, 16)
+                .padding(.top, 8)
             }
 
             ScrollView {
-                VStack(spacing: 20) {
-                    // Mic hero
+                VStack(spacing: 16) {
+                    // Mic hero (compact)
                     ZStack {
                         if viewModel.isRecording {
                             Circle()
-                                .stroke(Color.red.opacity(0.2), lineWidth: 1.5)
-                                .frame(width: 80, height: 80)
+                                .stroke(theme.recordingPulse, lineWidth: 1.5)
+                                .frame(width: 60, height: 60)
                                 .scaleEffect(pulseScale)
                                 .opacity(2 - pulseScale)
                                 .onAppear {
@@ -130,28 +125,27 @@ struct MainView: View {
                         }
 
                         Circle()
-                            .fill(viewModel.isRecording ? recordingGradient : brandGradient)
-                            .frame(width: 64, height: 64)
+                            .fill(viewModel.isRecording ? theme.recordingGradient : theme.brandGradient)
+                            .frame(width: 48, height: 48)
                             .shadow(
-                                color: viewModel.isRecording ? .red.opacity(0.25) : Color(red: 0.35, green: 0.45, blue: 0.95).opacity(0.2),
-                                radius: 12
+                                color: viewModel.isRecording ? theme.recordingShadow : theme.brandShadow,
+                                radius: theme.shadowRadius
                             )
 
                         Image(systemName: viewModel.isRecording ? "waveform" : "mic.fill")
-                            .font(.system(size: 24, weight: .medium))
+                            .font(.system(size: 20, weight: .medium))
                             .foregroundColor(.white)
                             .scaleEffect(viewModel.isRecording ? 1.0 + CGFloat(viewModel.audioLevel * 0.3) : 1.0)
                             .animation(.easeInOut(duration: 0.1), value: viewModel.audioLevel)
                     }
-                    .padding(.top, 16)
+                    .padding(.top, 12)
 
                     // Controls row
-                    VStack(spacing: 10) {
-                        // Mode
+                    VStack(spacing: 8) {
                         HStack {
                             Text("Mode")
-                                .font(.system(size: 10, weight: .medium))
-                                .foregroundColor(Color(.tertiaryLabelColor))
+                                .font(.system(size: 11, weight: .medium))
+                                .foregroundColor(theme.sectionHeaderColor)
                             Spacer()
                             Picker("", selection: $viewModel.selectedMode) {
                                 ForEach(TranslationMode.allCases) { mode in
@@ -162,12 +156,11 @@ struct MainView: View {
                             .fixedSize()
                         }
 
-                        // Target language (only for Translate mode)
                         if viewModel.selectedMode.needsTargetLanguage {
                             HStack {
                                 Text("Language")
-                                    .font(.system(size: 10, weight: .medium))
-                                    .foregroundColor(Color(.tertiaryLabelColor))
+                                    .font(.system(size: 11, weight: .medium))
+                                    .foregroundColor(theme.sectionHeaderColor)
                                 Spacer()
                                 Picker("", selection: $viewModel.targetLanguage) {
                                     ForEach(Language.allCases) { lang in
@@ -179,15 +172,15 @@ struct MainView: View {
                             }
                         }
                     }
-                    .padding(.horizontal, 20)
+                    .padding(.horizontal, 16)
 
                     // Result
                     if !viewModel.lastResult.isEmpty {
                         VStack(alignment: .leading, spacing: 8) {
                             HStack {
                                 Text("Result")
-                                    .font(.system(size: 10, weight: .medium))
-                                    .foregroundColor(Color(.tertiaryLabelColor))
+                                    .font(.system(size: 11, weight: .medium))
+                                    .foregroundColor(theme.sectionHeaderColor)
                                 Spacer()
 
                                 Button(action: {
@@ -197,8 +190,8 @@ struct MainView: View {
                                     DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) { showCopied = false }
                                 }) {
                                     Image(systemName: showCopied ? "checkmark" : "doc.on.doc")
-                                        .font(.system(size: 11))
-                                        .foregroundColor(showCopied ? .green : .secondary)
+                                        .font(.system(size: 12))
+                                        .foregroundColor(showCopied ? theme.statusSuccess : .secondary)
                                 }
                                 .buttonStyle(.plain)
                                 .help("Copy to clipboard")
@@ -207,7 +200,7 @@ struct MainView: View {
                                     PasteboardManager.pasteText(viewModel.lastResult)
                                 }) {
                                     Image(systemName: "doc.on.clipboard")
-                                        .font(.system(size: 11))
+                                        .font(.system(size: 12))
                                         .foregroundColor(.secondary)
                                 }
                                 .buttonStyle(.plain)
@@ -215,24 +208,28 @@ struct MainView: View {
                             }
 
                             Text(viewModel.lastResult)
-                                .font(.system(size: 14))
+                                .font(.system(size: 16))
                                 .textSelection(.enabled)
                                 .frame(maxWidth: .infinity, alignment: .leading)
                         }
                         .padding(12)
-                        .background(Color(.controlBackgroundColor))
-                        .cornerRadius(12)
-                        .padding(.horizontal, 20)
+                        .background(theme.cardBackground)
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 10)
+                                .stroke(theme.cardBorder, lineWidth: 1)
+                        )
+                        .cornerRadius(10)
+                        .padding(.horizontal, 16)
                     }
 
                     // Error
                     if let error = viewModel.lastError {
                         HStack(alignment: .top, spacing: 6) {
                             Image(systemName: "exclamationmark.circle")
-                                .foregroundColor(.red)
-                                .font(.system(size: 11))
+                                .foregroundColor(theme.statusError)
+                                .font(.system(size: 12))
                             Text(error)
-                                .font(.system(size: 11))
+                                .font(.system(size: 12))
                                 .foregroundColor(.secondary)
                             Spacer()
                             Button(action: { viewModel.lastError = nil }) {
@@ -244,9 +241,13 @@ struct MainView: View {
                         }
                         .padding(10)
                         .frame(maxWidth: .infinity, alignment: .leading)
-                        .background(Color.red.opacity(0.06))
-                        .cornerRadius(10)
-                        .padding(.horizontal, 20)
+                        .background(theme.errorTint)
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 8)
+                                .stroke(theme.statusError.opacity(0.15), lineWidth: 1)
+                        )
+                        .cornerRadius(8)
+                        .padding(.horizontal, 16)
                     }
 
                     // History
@@ -254,8 +255,8 @@ struct MainView: View {
                         VStack(alignment: .leading, spacing: 6) {
                             HStack {
                                 Text("Recent")
-                                    .font(.system(size: 10, weight: .medium))
-                                    .foregroundColor(Color(.tertiaryLabelColor))
+                                    .font(.system(size: 11, weight: .medium))
+                                    .foregroundColor(theme.sectionHeaderColor)
                                 Spacer()
                                 Button(action: { viewModel.history.removeAll() }) {
                                     Text("Clear")
@@ -264,7 +265,7 @@ struct MainView: View {
                                 }
                                 .buttonStyle(.plain)
                             }
-                            .padding(.horizontal, 20)
+                            .padding(.horizontal, 16)
 
                             VStack(spacing: 0) {
                                 ForEach(Array(viewModel.history.enumerated()), id: \.element.id) { index, item in
@@ -273,7 +274,7 @@ struct MainView: View {
                                     }
                                     HStack(spacing: 6) {
                                         Text(item.text)
-                                            .font(.system(size: 11))
+                                            .font(.system(size: 12))
                                             .lineLimit(1)
                                             .truncationMode(.tail)
                                             .foregroundColor(.primary)
@@ -292,34 +293,20 @@ struct MainView: View {
                                     .padding(.vertical, 7)
                                 }
                             }
-                            .background(Color(.controlBackgroundColor))
-                            .cornerRadius(10)
-                            .padding(.horizontal, 20)
+                            .background(theme.cardBackground)
+                            .overlay(
+                                RoundedRectangle(cornerRadius: 8)
+                                    .stroke(theme.cardBorder, lineWidth: 1)
+                            )
+                            .cornerRadius(8)
+                            .padding(.horizontal, 16)
                         }
                     }
                 }
                 .padding(.bottom, 10)
             }
-
-            Divider()
-
-            // Bottom bar
-            HStack {
-                Text("Hold to speak. Instant translation.")
-                    .font(.system(size: 10))
-                    .foregroundColor(Color(.tertiaryLabelColor))
-                Spacer()
-                Button(action: { NSApp.terminate(nil) }) {
-                    Text("Quit")
-                        .font(.system(size: 11))
-                        .foregroundColor(.secondary)
-                }
-                .buttonStyle(.plain)
-            }
-            .padding(.horizontal, 20)
-            .padding(.vertical, 7)
         }
-        .frame(width: 380, height: 500)
+        .frame(width: 340, height: 400)
         .clipped()
     }
 }

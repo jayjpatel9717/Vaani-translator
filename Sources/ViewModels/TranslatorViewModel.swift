@@ -15,6 +15,7 @@ class TranslatorViewModel: ObservableObject {
     @Published var apiKey: String = ""
     @Published var audioLevel: Float = 0.0
     @Published var useFnKey: Bool = false
+    @Published var appearanceMode: AppearanceMode = .system
     @Published var history: [HistoryItem] = []
     @Published var accessibilityGranted: Bool = false
 
@@ -54,10 +55,22 @@ class TranslatorViewModel: ObservableObject {
         // Load fn key preference
         useFnKey = UserDefaults.standard.bool(forKey: "useFnKey")
 
+        // Load appearance preference
+        if let saved = UserDefaults.standard.string(forKey: "appearanceMode"),
+           let mode = AppearanceMode(rawValue: saved) {
+            appearanceMode = mode
+        }
+
         // Persist fn key preference on change
         $useFnKey
             .dropFirst()
             .sink { UserDefaults.standard.set($0, forKey: "useFnKey") }
+            .store(in: &cancellables)
+
+        // Persist appearance preference on change
+        $appearanceMode
+            .dropFirst()
+            .sink { UserDefaults.standard.set($0.rawValue, forKey: "appearanceMode") }
             .store(in: &cancellables)
 
         // Observe audio level
