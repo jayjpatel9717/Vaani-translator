@@ -265,58 +265,6 @@ struct MainView: View {
                         .padding(.horizontal, 16)
                     }
 
-                    // History
-                    if !viewModel.history.isEmpty {
-                        VStack(alignment: .leading, spacing: 6) {
-                            HStack {
-                                Text("Recent")
-                                    .font(.system(size: 11, weight: .medium))
-                                    .foregroundColor(theme.sectionHeaderColor)
-                                Spacer()
-                                Button(action: { viewModel.history.removeAll() }) {
-                                    Text("Clear")
-                                        .font(.system(size: 10))
-                                        .foregroundColor(.secondary)
-                                }
-                                .buttonStyle(.plain)
-                            }
-                            .padding(.horizontal, 16)
-
-                            VStack(spacing: 0) {
-                                ForEach(Array(viewModel.history.enumerated()), id: \.element.id) { index, item in
-                                    if index > 0 {
-                                        Divider().padding(.leading, 12)
-                                    }
-                                    HStack(spacing: 6) {
-                                        Text(item.text)
-                                            .font(.system(size: 12))
-                                            .lineLimit(1)
-                                            .truncationMode(.tail)
-                                            .foregroundColor(.primary)
-                                        Spacer()
-                                        Button(action: {
-                                            NSPasteboard.general.clearContents()
-                                            NSPasteboard.general.setString(item.text, forType: .string)
-                                        }) {
-                                            Image(systemName: "doc.on.doc")
-                                                .font(.system(size: 10))
-                                                .foregroundColor(.secondary)
-                                        }
-                                        .buttonStyle(.plain)
-                                    }
-                                    .padding(.horizontal, 12)
-                                    .padding(.vertical, 7)
-                                }
-                            }
-                            .background(theme.cardBackground)
-                            .overlay(
-                                RoundedRectangle(cornerRadius: 8)
-                                    .stroke(theme.cardBorder, lineWidth: 1)
-                            )
-                            .cornerRadius(8)
-                            .padding(.horizontal, 16)
-                        }
-                    }
                 }
                 .padding(.bottom, 10)
             }

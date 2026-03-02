@@ -28,9 +28,9 @@ class TranslatorViewModel: ObservableObject {
     private var cancellables = Set<AnyCancellable>()
     private var accessibilityTimer: Timer?
 
-    // Rate limiting: track last 10 request timestamps
+    // Rate limiting
     private var recentRequests: [Date] = []
-    private let maxRequestsPerMinute = 10
+    private let maxRequestsPerMinute = 30
 
     init() {
         // Load API key from keychain
@@ -149,8 +149,6 @@ class TranslatorViewModel: ObservableObject {
             return
         }
 
-        recentRequests.append(now)
-
         guard hasAPIKey() else {
             lastError = "API key not configured. Add your API key in Settings."
             showSettings = true
@@ -165,51 +163,74 @@ class TranslatorViewModel: ObservableObject {
         isProcessing = true
         lastError = nil
 
-        Task {
+        // Capture values for detached task (can't access @MainActor properties there)
+        let mode = selectedMode
+        let lang = targetLanguage
+        let key = apiKey
+        let client = apiClient
+        let recorder = audioRecorder
+
+        // Run ENTIRE pipeline off main thread to prevent UI freeze
+        Task.detached {
             do {
-                let result = try await apiClient.transcribe(
-                    audioURL: url,
-                    mode: selectedMode,
-                    targetLanguage: targetLanguage,
-                    apiKey: apiKey
+                // 1. Convert to 16kHz Int16 mono + split into ≤28s chunks
+                let chunks = try AudioChunker.convertAndSplit(audioURL: url)
+
+                // 2. Transcribe all chunks in parallel, combine results
+                let result = try await client.transcribeChunks(
+                    audioURLs: chunks,
+                    mode: mode,
+                    targetLanguage: lang,
+                    apiKey: key
                 )
 
-                await MainActor.run {
-                    lastResult = result.text
-                    processingTime = result.processingTime
-                    isProcessing = false
+                await MainActor.run { [weak self] in
+                    guard let self else { return }
+                    self.lastResult = result.text
+                    self.processingTime = result.processingTime
+                    self.isProcessing = false
+
+                    // Rate limiting
+                    for _ in chunks {
+                        self.recentRequests.append(Date())
+                    }
 
                     // Save to history
                     let item = HistoryItem(
                         text: result.text,
-                        toLang: targetLanguage,
-                        mode: selectedMode,
+                        toLang: lang,
+                        mode: mode,
                         date: Date()
                     )
-                    history.insert(item, at: 0)
-                    if history.count > 3 {
-                        history = Array(history.prefix(3))
+                    self.history.insert(item, at: 0)
+                    if self.history.count > 3 {
+                        self.history = Array(self.history.prefix(3))
                     }
 
                     // Auto-paste the result
                     PasteboardManager.pasteText(result.text)
                 }
 
-                // Cleanup
-                audioRecorder.cleanup()
+                // 3. Cleanup original + chunk files
+                recorder.cleanupAll(chunkURLs: chunks)
 
+            } catch let error as AudioChunkerError {
+                await MainActor.run { [weak self] in
+                    self?.lastError = error.localizedDescription
+                    self?.isProcessing = false
+                }
             } catch let error as APIError {
-                await MainActor.run {
-                    lastError = error.localizedDescription
-                    isProcessing = false
+                await MainActor.run { [weak self] in
+                    self?.lastError = error.localizedDescription
+                    self?.isProcessing = false
                     if case .httpError(let code) = error, code == 401 || code == 403 {
-                        apiKeyValid = false
+                        self?.apiKeyValid = false
                     }
                 }
             } catch {
-                await MainActor.run {
-                    lastError = "Translation failed: \(error.localizedDescription)"
-                    isProcessing = false
+                await MainActor.run { [weak self] in
+                    self?.lastError = "Translation failed: \(error.localizedDescription)"
+                    self?.isProcessing = false
                 }
             }
         }

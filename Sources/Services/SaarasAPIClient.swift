@@ -99,8 +99,13 @@ class SaarasAPIClient: NSObject, URLSessionDelegate {
         // Language code — "unknown" lets the API auto-detect source language
         body.appendFormField(named: "language_code", value: "unknown", boundary: boundary)
 
+        // For translate to non-English: use transcribe mode for STT, then translate
+        // directly from source language → target (skips the English middleman)
+        let directTranslate = (mode == .translate && targetLanguage != .english)
+        let sttMode = directTranslate ? TranslationMode.transcribe.rawValue : mode.rawValue
+
         // Mode parameter
-        body.appendFormField(named: "mode", value: mode.rawValue, boundary: boundary)
+        body.appendFormField(named: "mode", value: sttMode, boundary: boundary)
 
         // Audio file
         body.append("--\(boundary)\r\n".data(using: .utf8)!)
@@ -129,12 +134,15 @@ class SaarasAPIClient: NSObject, URLSessionDelegate {
 
         var finalText = apiResponse.transcript
 
-        // For translate mode: STT always returns English.
-        // If the target language is not English, chain a text translation call.
-        if mode == .translate, targetLanguage != .english {
+        // For translate to non-English: STT returned native text via transcribe mode.
+        // Translate directly from detected source language → target (no English hop).
+        // For translate to English: STT already returned English via translate mode.
+        if directTranslate {
+            let sourceLang = apiResponse.languageCode
+                .flatMap { Language(rawValue: $0) } ?? .hindi
             finalText = try await translateText(
                 input: apiResponse.transcript,
-                sourceLanguage: .english,
+                sourceLanguage: sourceLang,
                 targetLanguage: targetLanguage,
                 apiKey: apiKey
             )
@@ -146,6 +154,85 @@ class SaarasAPIClient: NSObject, URLSessionDelegate {
             text: finalText,
             sourceLanguage: apiResponse.languageCode,
             confidence: apiResponse.languageProbability,
+            processingTime: processingTime
+        )
+    }
+
+    /// Transcribes multiple audio chunks in parallel, returning a combined result.
+    /// For translate mode with non-English target: transcribes in native language,
+    /// concatenates, then performs ONE direct translation (no English middleman).
+    func transcribeChunks(
+        audioURLs: [URL],
+        mode: TranslationMode,
+        targetLanguage: Language,
+        apiKey: String
+    ) async throws -> TranslationResult {
+        let startTime = Date()
+
+        // Single chunk — use the normal path directly
+        if audioURLs.count == 1 {
+            return try await transcribe(
+                audioURL: audioURLs[0],
+                mode: mode,
+                targetLanguage: targetLanguage,
+                apiKey: apiKey
+            )
+        }
+
+        // For translate to non-English: transcribe each chunk in native language,
+        // concatenate, then ONE translateText() call (direct, no English hop).
+        // For translate to English: STT translate mode returns English directly.
+        // For all other modes: transcribe each chunk, concatenate results.
+        let needsPostTranslation = (mode == .translate && targetLanguage != .english)
+
+        // Parallel transcription of all chunks
+        let indexedResults: [(Int, String, String?)] = try await withThrowingTaskGroup(
+            of: (Int, String, String?).self
+        ) { group in
+            for (index, url) in audioURLs.enumerated() {
+                group.addTask {
+                    // For post-translation: use transcribe mode to get native text
+                    // (transcribe() handles this via directTranslate logic)
+                    let result = try await self.transcribe(
+                        audioURL: url,
+                        mode: needsPostTranslation ? .transcribe : mode,
+                        targetLanguage: targetLanguage,
+                        apiKey: apiKey
+                    )
+                    return (index, result.text, result.sourceLanguage)
+                }
+            }
+
+            var results: [(Int, String, String?)] = []
+            for try await result in group {
+                results.append(result)
+            }
+            return results
+        }
+
+        // Sort by chunk order and concatenate
+        let sorted = indexedResults.sorted { $0.0 < $1.0 }
+        let orderedTranscripts = sorted.map { $0.1 }.filter { !$0.isEmpty }
+        var combinedText = orderedTranscripts.joined(separator: " ")
+
+        // For translate to non-English: one direct translation from source → target
+        if needsPostTranslation && !combinedText.isEmpty {
+            let sourceLang = sorted.first?.2
+                .flatMap { Language(rawValue: $0) } ?? .hindi
+            combinedText = try await translateText(
+                input: combinedText,
+                sourceLanguage: sourceLang,
+                targetLanguage: targetLanguage,
+                apiKey: apiKey
+            )
+        }
+
+        let processingTime = Date().timeIntervalSince(startTime)
+
+        return TranslationResult(
+            text: combinedText,
+            sourceLanguage: sorted.first?.2,
+            confidence: nil,
             processingTime: processingTime
         )
     }
@@ -188,7 +275,7 @@ class SaarasAPIClient: NSObject, URLSessionDelegate {
             "input": input,
             "source_language_code": sourceLanguage.bcp47Code,
             "target_language_code": targetLanguage.bcp47Code,
-            "model": "mayura:v1",
+            "model": "sarvam-translate:v1",
             "mode": "formal"
         ]
 

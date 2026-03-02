@@ -90,9 +90,6 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         fnKeyMonitor = FnKeyMonitor()
         fnKeyMonitor?.onFnDown = { [weak self] in
             Task { @MainActor in
-                if let popover = self?.popover, popover.isShown {
-                    popover.performClose(nil)
-                }
                 self?.viewModel.startRecording()
                 self?.updateStatusIcon(recording: true)
             }
