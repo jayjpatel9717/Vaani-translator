@@ -187,9 +187,9 @@ cat > "$APP_NAME/Contents/Info.plist" << 'EOF'
     <key>CFBundlePackageType</key>
     <string>APPL</string>
     <key>CFBundleShortVersionString</key>
-    <string>1.0.0</string>
+    <string>1.1.0</string>
     <key>CFBundleVersion</key>
-    <string>1</string>
+    <string>2</string>
     <key>LSMinimumSystemVersion</key>
     <string>13.0</string>
     <key>LSUIElement</key>
@@ -226,7 +226,7 @@ fi
 # Create enhanced DMG installer with Quick Install script
 echo ""
 echo "Creating enhanced DMG installer..."
-DMG_NAME="Vaani-v1.0.0-macOS.dmg"
+DMG_NAME="Vaani-v1.1.0-macOS.dmg"
 
 TMP_DMG_DIR=$(mktemp -d)
 cp -R "$APP_NAME" "$TMP_DMG_DIR/"

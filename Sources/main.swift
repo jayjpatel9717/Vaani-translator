@@ -139,7 +139,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     func showContextMenu() {
         let menu = NSMenu()
 
-        menu.addItem(withTitle: "Vaani v1.0.0", action: nil, keyEquivalent: "")
+        menu.addItem(withTitle: "Vaani v1.1.0", action: nil, keyEquivalent: "")
         menu.addItem(.separator())
 
         let settingsItem = NSMenuItem(title: "Settings...", action: #selector(openSettings), keyEquivalent: ",")
