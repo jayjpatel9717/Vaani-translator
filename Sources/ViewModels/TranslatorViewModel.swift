@@ -18,6 +18,7 @@ class TranslatorViewModel: ObservableObject {
     @Published var appearanceMode: AppearanceMode = .system
     @Published var history: [HistoryItem] = []
     @Published var accessibilityGranted: Bool = false
+    @Published var apiKeyValid: Bool = true
 
     private let audioRecorder = AudioRecorder()
     private let apiClient = SaarasAPIClient()
@@ -76,6 +77,13 @@ class TranslatorViewModel: ObservableObject {
             .dropFirst()
             .sink { UserDefaults.standard.set($0.rawValue, forKey: "appearanceMode") }
             .store(in: &cancellables)
+
+        // Validate API key on launch
+        if hasAPIKey() {
+            validateAPIKey()
+        } else {
+            apiKeyValid = false
+        }
 
         // Observe audio level
         audioRecorder.$audioLevel
@@ -190,6 +198,14 @@ class TranslatorViewModel: ObservableObject {
                 // Cleanup
                 audioRecorder.cleanup()
 
+            } catch let error as APIError {
+                await MainActor.run {
+                    lastError = error.localizedDescription
+                    isProcessing = false
+                    if case .httpError(let code) = error, code == 401 || code == 403 {
+                        apiKeyValid = false
+                    }
+                }
             } catch {
                 await MainActor.run {
                     lastError = "Translation failed: \(error.localizedDescription)"
@@ -203,6 +219,7 @@ class TranslatorViewModel: ObservableObject {
         do {
             try keychainManager.saveAPIKey(apiKey)
             lastError = nil
+            validateAPIKey()
         } catch {
             lastError = "Failed to save API key: \(error.localizedDescription)"
         }
@@ -210,5 +227,26 @@ class TranslatorViewModel: ObservableObject {
 
     func hasAPIKey() -> Bool {
         return keychainManager.hasAPIKey()
+    }
+
+    func validateAPIKey() {
+        guard hasAPIKey() else {
+            apiKeyValid = false
+            return
+        }
+        let key = apiKey.isEmpty ? (keychainManager.getAPIKey() ?? "") : apiKey
+        guard !key.isEmpty else {
+            apiKeyValid = false
+            return
+        }
+        Task {
+            let valid = await apiClient.validateKey(apiKey: key)
+            await MainActor.run {
+                self.apiKeyValid = valid
+                if !valid {
+                    self.lastError = "API key invalid or expired. Update in Settings."
+                }
+            }
+        }
     }
 }

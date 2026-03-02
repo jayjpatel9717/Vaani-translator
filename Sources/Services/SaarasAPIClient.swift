@@ -150,6 +150,28 @@ class SaarasAPIClient: NSObject, URLSessionDelegate {
         )
     }
 
+    /// Validate API key by making a lightweight request
+    func validateKey(apiKey: String) async -> Bool {
+        var request = URLRequest(url: URL(string: "\(baseURL)/speech-to-text")!)
+        request.httpMethod = "POST"
+        request.setValue(apiKey, forHTTPHeaderField: "api-subscription-key")
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        // Send empty body — API will return 400 (bad request) if key is valid,
+        // or 401/403 if key is invalid
+        request.httpBody = "{}".data(using: .utf8)
+        request.timeoutInterval = 10
+
+        do {
+            let (_, response) = try await session.data(for: request)
+            guard let httpResponse = response as? HTTPURLResponse else { return false }
+            // 401/403 = invalid key; anything else (400, 422, 200) = key works
+            return httpResponse.statusCode != 401 && httpResponse.statusCode != 403
+        } catch {
+            // Network error — don't mark key as invalid
+            return true
+        }
+    }
+
     /// Text-to-text translation using Sarvam /translate endpoint
     func translateText(
         input: String,

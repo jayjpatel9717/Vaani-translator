@@ -26,6 +26,10 @@ struct MainView: View {
             return "Listening\u{2026}"
         } else if viewModel.isProcessing {
             return "Processing\u{2026}"
+        } else if viewModel.lastError != nil {
+            return "Error"
+        } else if !viewModel.apiKeyValid {
+            return "API key issue"
         } else if !viewModel.lastResult.isEmpty {
             return "Ready \u{00B7} \(String(format: "%.1fs", viewModel.processingTime))"
         } else {
@@ -36,6 +40,12 @@ struct MainView: View {
     private var statusDotColor: Color {
         if viewModel.isRecording {
             return theme.statusError
+        } else if viewModel.lastError != nil {
+            return theme.statusError
+        } else if viewModel.isProcessing {
+            return theme.statusWarning
+        } else if !viewModel.apiKeyValid {
+            return theme.statusWarning
         } else if viewModel.hasAPIKey() {
             return theme.statusSuccess
         } else {
