@@ -19,7 +19,7 @@ What should have happened instead.
 
 **Environment**
 - macOS version: [e.g., 14.2 Sonoma]
-- Vaani version: [e.g., 1.1.0]
+- Vaani version: [e.g., 1.0.0]
 - Mac chip: [Apple Silicon / Intel]
 - Install method: [Homebrew / DMG / Build from source]
 

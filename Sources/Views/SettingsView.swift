@@ -214,7 +214,7 @@ struct SettingsView: View {
                                 .cornerRadius(7)
                         }
                         VStack(alignment: .leading, spacing: 2) {
-                            Text("Vaani v1.1.0")
+                            Text("Vaani v1.0.0")
                                 .font(.system(size: 12, weight: .medium))
                             Text("23 languages \u{00B7} 5 modes \u{00B7} Sarvam AI")
                                 .font(.system(size: 10))
