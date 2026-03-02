@@ -1,20 +1,19 @@
 import Foundation
-import KeychainAccess
 
 class KeychainManager {
-    private let keychain = Keychain(service: "com.vaani.app")
     private let apiKeyKey = "vaani_api_key"
 
     func saveAPIKey(_ key: String) throws {
-        try keychain.set(key, key: apiKeyKey)
+        UserDefaults.standard.set(key, forKey: apiKeyKey)
     }
 
     func getAPIKey() -> String? {
-        return try? keychain.get(apiKeyKey)
+        let key = UserDefaults.standard.string(forKey: apiKeyKey)
+        return (key?.isEmpty == false) ? key : nil
     }
 
     func deleteAPIKey() throws {
-        try keychain.remove(apiKeyKey)
+        UserDefaults.standard.removeObject(forKey: apiKeyKey)
     }
 
     func hasAPIKey() -> Bool {

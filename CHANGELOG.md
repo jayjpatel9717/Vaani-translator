@@ -20,7 +20,7 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). Version
 - **Dark & Light theme** — adaptive colors with appearance toggle on main screen (System/Light/Dark)
 - **API key validation** — status dot shows green/yellow/red based on actual API health
 - **Compact menubar UI** — 320x380 popover with mic hero, status header, and history
-- **Secure API key storage** in macOS Keychain
+- **API key storage** in app preferences
 - **Audio recording** with AVAudioEngine in native mic format, auto-converted to 16kHz mono
 - **TLS certificate validation** with pinning-ready infrastructure
 - **Client-side rate limiting** — 30 requests per minute

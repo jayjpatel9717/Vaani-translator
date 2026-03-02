@@ -13,15 +13,13 @@ let package = Package(
         )
     ],
     dependencies: [
-        .package(url: "https://github.com/sindresorhus/KeyboardShortcuts", exact: "1.14.0"),
-        .package(url: "https://github.com/kishikawakatsumi/KeychainAccess", from: "4.2.2")
+        .package(url: "https://github.com/sindresorhus/KeyboardShortcuts", exact: "1.14.0")
     ],
     targets: [
         .executableTarget(
             name: "SaarasTranslator",
             dependencies: [
-                "KeyboardShortcuts",
-                "KeychainAccess"
+                "KeyboardShortcuts"
             ],
             path: "Sources"
         )

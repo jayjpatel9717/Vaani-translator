@@ -32,11 +32,11 @@ class TranslatorViewModel: ObservableObject {
     private var recentRequests: [Date] = []
     private let maxRequestsPerMinute = 30
 
-    private var keychainLoaded = false
-
     init() {
-        // Defer Keychain read to avoid macOS permission dialog on first launch.
-        // API key is loaded lazily when Settings is opened or recording starts.
+        // Load API key
+        if let savedKey = keychainManager.getAPIKey() {
+            apiKey = savedKey
+        }
 
         // Check accessibility permission and poll until granted
         accessibilityGranted = PasteboardManager.hasAccessibilityPermission()
@@ -78,9 +78,11 @@ class TranslatorViewModel: ObservableObject {
             .sink { UserDefaults.standard.set($0.rawValue, forKey: "appearanceMode") }
             .store(in: &cancellables)
 
-        // Validate API key lazily after a short delay (avoids Keychain dialog on cold launch)
-        DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) { [weak self] in
-            self?.loadKeychainIfNeeded()
+        // Validate API key on launch
+        if hasAPIKey() {
+            validateAPIKey()
+        } else {
+            apiKeyValid = false
         }
 
         // Observe audio level
@@ -245,20 +247,7 @@ class TranslatorViewModel: ObservableObject {
         }
     }
 
-    /// Loads API key from Keychain on first access (deferred from init to avoid first-launch dialog)
-    func loadKeychainIfNeeded() {
-        guard !keychainLoaded else { return }
-        keychainLoaded = true
-        if let savedKey = keychainManager.getAPIKey() {
-            apiKey = savedKey
-            validateAPIKey()
-        } else {
-            apiKeyValid = false
-        }
-    }
-
     func hasAPIKey() -> Bool {
-        loadKeychainIfNeeded()
         return keychainManager.hasAPIKey()
     }
 
