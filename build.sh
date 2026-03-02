@@ -153,14 +153,14 @@ mkdir -p "$APP_NAME/Contents/Resources"
 cp "$BUILD_PATH" "$APP_NAME/Contents/MacOS/SaarasTranslator"
 chmod +x "$APP_NAME/Contents/MacOS/SaarasTranslator"
 
-# Copy Swift Package Manager resource bundles (e.g. KeyboardShortcuts localization)
-# SPM's generated resource_bundle_accessor looks at Bundle.main.bundleURL (the .app root)
-# so bundles must go at the top level of the .app, not inside Contents/Resources/
+# Copy Swift Package Manager resource bundles into Contents/Resources
+# so the app bundle structure is valid and code signing works properly.
+# SPM's Bundle.module checks Bundle.main.resourceURL (Contents/Resources/) first.
 BUILD_DIR=$(dirname "$BUILD_PATH")
 for bundle in "$BUILD_DIR"/*.bundle; do
     if [ -d "$bundle" ]; then
         echo "Copying resource bundle: $(basename "$bundle")"
-        cp -R "$bundle" "$APP_NAME/"
+        cp -R "$bundle" "$APP_NAME/Contents/Resources/"
     fi
 done
 
@@ -225,7 +225,8 @@ EOF
 echo -e "${GREEN}✅ App bundle created: $APP_NAME${NC}"
 
 # Code sign
-codesign --force --deep --sign - "$APP_NAME" 2>/dev/null || true
+# Sign with bundle identifier so macOS TCC permissions persist across rebuilds
+codesign --force --deep --sign - --identifier com.vaani.app "$APP_NAME" 2>/dev/null || true
 
 # Skip DMG creation for source builds (pass --dmg to create DMG)
 if [[ "$1" != "--dmg" ]]; then
