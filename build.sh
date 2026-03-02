@@ -87,15 +87,48 @@ echo ""
 echo "Building Vaani..."
 echo ""
 
-# Try universal build first, fallback to native architecture
-# Use pipefail so we get swift build's exit code, not tail's
 set -o pipefail
-if swift build -c release --arch arm64 --arch x86_64 2>&1 | tail -5; then
+BUILD_FAILED=false
+
+# Strategy: build each arch separately, then lipo into universal binary.
+# This works even without full Xcode (CLT-only), unlike --arch arm64 --arch x86_64.
+
+# Detect host architecture
+HOST_ARCH=$(uname -m)
+
+echo "Building for arm64..."
+if swift build -c release --arch arm64 2>&1 | tail -5; then
+    ARM64_PATH=".build/arm64-apple-macosx/release/SaarasTranslator"
+else
+    ARM64_PATH=""
+    echo -e "${YELLOW}⚠️  arm64 build failed${NC}"
+fi
+
+echo ""
+echo "Building for x86_64 (Intel)..."
+if swift build -c release --arch x86_64 2>&1 | tail -5; then
+    X86_PATH=".build/x86_64-apple-macosx/release/SaarasTranslator"
+else
+    X86_PATH=""
+    echo -e "${YELLOW}⚠️  x86_64 build failed${NC}"
+fi
+
+echo ""
+
+# Create universal binary if both succeeded, otherwise use whichever worked
+if [ -n "$ARM64_PATH" ] && [ -f "$ARM64_PATH" ] && [ -n "$X86_PATH" ] && [ -f "$X86_PATH" ]; then
+    echo "Creating universal binary (Intel + Apple Silicon)..."
+    UNIVERSAL_PATH=".build/release/SaarasTranslator"
+    mkdir -p "$(dirname "$UNIVERSAL_PATH")"
+    lipo -create "$ARM64_PATH" "$X86_PATH" -output "$UNIVERSAL_PATH"
+    BUILD_PATH="$UNIVERSAL_PATH"
     echo -e "${GREEN}✅ Universal binary built (Intel + Apple Silicon)${NC}"
-    BUILD_PATH=".build/apple/Products/Release/SaarasTranslator"
-elif swift build -c release 2>&1 | tail -20; then
-    echo -e "${GREEN}✅ Native binary built${NC}"
-    BUILD_PATH=".build/release/SaarasTranslator"
+elif [ -n "$ARM64_PATH" ] && [ -f "$ARM64_PATH" ]; then
+    BUILD_PATH="$ARM64_PATH"
+    echo -e "${YELLOW}⚠️  Built for arm64 only (Apple Silicon)${NC}"
+elif [ -n "$X86_PATH" ] && [ -f "$X86_PATH" ]; then
+    BUILD_PATH="$X86_PATH"
+    echo -e "${YELLOW}⚠️  Built for x86_64 only (Intel)${NC}"
 else
     echo -e "${RED}❌ Build failed${NC}"
     echo ""
@@ -105,19 +138,6 @@ else
     echo "  3. Clear cache: rm -rf .build ~/Library/Caches/org.swift.swiftpm"
     echo "  4. Check logs above for specific errors"
     exit 1
-fi
-
-# Verify executable exists
-if [ ! -f "$BUILD_PATH" ]; then
-    echo -e "${RED}❌ Build failed: executable not found at $BUILD_PATH${NC}"
-
-    # Try alternate path
-    if [ -f ".build/release/SaarasTranslator" ]; then
-        BUILD_PATH=".build/release/SaarasTranslator"
-    else
-        echo "Could not find built executable"
-        exit 1
-    fi
 fi
 
 echo -e "${GREEN}✅ Build successful!${NC}"
