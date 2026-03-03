@@ -82,7 +82,7 @@ struct SettingsView: View {
                         Spacer()
 
                         Circle()
-                            .fill(viewModel.hasAPIKey() ? theme.statusSuccess : theme.statusWarning)
+                            .fill(!viewModel.apiKey.isEmpty ? theme.statusSuccess : theme.statusWarning)
                             .frame(width: 6, height: 6)
                         Text("Keychain")
                             .font(.system(size: 9))
@@ -102,7 +102,7 @@ struct SettingsView: View {
                         Text("Hold to speak")
                             .font(.system(size: 11))
                         Spacer()
-                        KeyboardShortcuts.Recorder("", name: .record)
+                        KeyboardShortcuts.Recorder(for: .record)
                     }
 
                     Divider()
