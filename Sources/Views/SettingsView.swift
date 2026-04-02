@@ -1,5 +1,6 @@
 import SwiftUI
 import KeyboardShortcuts
+import Carbon.HIToolbox
 
 struct SettingsView: View {
     @EnvironmentObject var viewModel: TranslatorViewModel
@@ -7,6 +8,8 @@ struct SettingsView: View {
 
     @State private var showAPIKeyText = false
     @State private var savedConfirmation = false
+    @State private var isRecordingShortcut = false
+    @State private var currentShortcutDisplay: String = Self.shortcutDisplayString()
 
     private var theme: AppTheme { AppTheme(colorScheme) }
 
@@ -102,7 +105,25 @@ struct SettingsView: View {
                         Text("Hold to speak")
                             .font(.system(size: 11))
                         Spacer()
-                        KeyboardShortcuts.Recorder(for: .record)
+                        Button(action: {
+                            if isRecordingShortcut {
+                                isRecordingShortcut = false
+                            } else {
+                                isRecordingShortcut = true
+                                startListeningForShortcut()
+                            }
+                        }) {
+                            Text(isRecordingShortcut ? "Press shortcut…" : currentShortcutDisplay)
+                                .font(.system(size: 11))
+                                .foregroundColor(isRecordingShortcut ? .secondary : .primary)
+                                .padding(.horizontal, 8)
+                                .padding(.vertical, 4)
+                                .background(
+                                    RoundedRectangle(cornerRadius: 6)
+                                        .stroke(isRecordingShortcut ? Color.accentColor : Color.secondary.opacity(0.3), lineWidth: 1)
+                                )
+                        }
+                        .buttonStyle(.plain)
                     }
 
                     Divider()
@@ -158,6 +179,28 @@ struct SettingsView: View {
             Spacer()
         }
         .frame(width: 320, height: 380)
+    }
+
+    private static func shortcutDisplayString() -> String {
+        guard let shortcut = KeyboardShortcuts.getShortcut(for: .record) else {
+            return "Record Shortcut"
+        }
+        return shortcut.description
+    }
+
+    private func startListeningForShortcut() {
+        NSEvent.addLocalMonitorForEvents(matching: .keyDown) { event in
+            guard self.isRecordingShortcut else { return event }
+            let modifiers = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
+            let key = KeyboardShortcuts.Key(rawValue: Int(event.keyCode))
+            let newShortcut = KeyboardShortcuts.Shortcut(key, modifiers: modifiers)
+            KeyboardShortcuts.setShortcut(newShortcut, for: .record)
+            DispatchQueue.main.async {
+                self.isRecordingShortcut = false
+                self.currentShortcutDisplay = Self.shortcutDisplayString()
+            }
+            return nil
+        }
     }
 }
 
