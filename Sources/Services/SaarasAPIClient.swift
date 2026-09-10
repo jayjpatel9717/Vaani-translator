@@ -1,5 +1,9 @@
 import Foundation
 import CommonCrypto
+import os
+
+// Diagnostics: `log show --predicate 'subsystem == "com.vaani.app"' --last 10m`
+private let apiLog = Logger(subsystem: "com.vaani.app", category: "api")
 
 class SaarasAPIClient: NSObject, URLSessionDelegate {
     private let baseURL = "https://api.sarvam.ai"
@@ -126,11 +130,18 @@ class SaarasAPIClient: NSObject, URLSessionDelegate {
         }
 
         guard httpResponse.statusCode == 200 else {
-            // Don't leak server error details to prevent information disclosure
+            apiLog.error("speech-to-text HTTP \(httpResponse.statusCode): \(String(decoding: data.prefix(500), as: UTF8.self), privacy: .public)")
             throw APIError.httpError(httpResponse.statusCode)
         }
 
-        let apiResponse = try JSONDecoder().decode(SarvamAPIResponse.self, from: data)
+        let apiResponse: SarvamAPIResponse
+        do {
+            apiResponse = try JSONDecoder().decode(SarvamAPIResponse.self, from: data)
+        } catch {
+            apiLog.error("speech-to-text decode failed: \(String(describing: error), privacy: .public) body: \(String(decoding: data.prefix(500), as: UTF8.self), privacy: .public)")
+            throw error
+        }
+        apiLog.info("speech-to-text ok: \(apiResponse.transcript.count) chars, lang \(apiResponse.languageCode ?? "nil", privacy: .public)")
 
         var finalText = apiResponse.transcript
 
@@ -237,8 +248,16 @@ class SaarasAPIClient: NSObject, URLSessionDelegate {
         )
     }
 
+    /// Opens the HTTPS connection early (fn-down) so the upload on release skips the TLS handshake.
+    func warmUp() {
+        var request = URLRequest(url: URL(string: baseURL)!)
+        request.httpMethod = "HEAD"
+        request.timeoutInterval = 5
+        session.dataTask(with: request).resume()
+    }
+
     /// Validate API key by making a lightweight request
-    func validateKey(apiKey: String) async -> Bool {
+    func validateKey(apiKey: String) async -> APIKeyStatus {
         var request = URLRequest(url: URL(string: "\(baseURL)/speech-to-text")!)
         request.httpMethod = "POST"
         request.setValue(apiKey, forHTTPHeaderField: "api-subscription-key")
@@ -250,12 +269,14 @@ class SaarasAPIClient: NSObject, URLSessionDelegate {
 
         do {
             let (_, response) = try await session.data(for: request)
-            guard let httpResponse = response as? HTTPURLResponse else { return false }
-            // 401/403 = invalid key; anything else (400, 422, 200) = key works
-            return httpResponse.statusCode != 401 && httpResponse.statusCode != 403
+            guard let httpResponse = response as? HTTPURLResponse else { return .unknown }
+            switch httpResponse.statusCode {
+            case 401, 403: return .invalid
+            case 402: return .noCredits
+            default: return .ok   // 400/422 = key accepted, body rejected
+            }
         } catch {
-            // Network error — don't mark key as invalid
-            return true
+            return .unknown   // network error — don't blame the key
         }
     }
 
@@ -288,7 +309,7 @@ class SaarasAPIClient: NSObject, URLSessionDelegate {
         }
 
         guard httpResponse.statusCode == 200 else {
-            // Don't leak server error details
+            apiLog.error("translate HTTP \(httpResponse.statusCode): \(String(decoding: data.prefix(500), as: UTF8.self), privacy: .public)")
             throw APIError.httpError(httpResponse.statusCode)
         }
 
@@ -305,6 +326,29 @@ private extension Data {
     }
 }
 
+enum APIKeyStatus: Equatable {
+    case unknown, missing, ok, invalid, noCredits
+
+    var label: String {
+        switch self {
+        case .unknown: return "Not checked"
+        case .missing: return "No key saved"
+        case .ok: return "Key OK"
+        case .invalid: return "Invalid key"
+        case .noCredits: return "No credits"
+        }
+    }
+
+    var message: String? {
+        switch self {
+        case .missing: return "Add your Sarvam API key in Settings."
+        case .invalid: return "API key invalid or expired. Update in Settings."
+        case .noCredits: return "Sarvam account has no credits. Add credits at dashboard.sarvam.ai"
+        case .ok, .unknown: return nil
+        }
+    }
+}
+
 enum APIError: Error, LocalizedError {
     case invalidResponse
     case httpError(Int)
@@ -317,6 +361,8 @@ enum APIError: Error, LocalizedError {
             switch code {
             case 401, 403:
                 return "API key invalid or expired"
+            case 402:
+                return "Sarvam account has no credits. Add credits at dashboard.sarvam.ai"
             case 429:
                 return "Too many requests. Please wait and try again"
             case 500...599:

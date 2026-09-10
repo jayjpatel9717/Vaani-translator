@@ -153,9 +153,10 @@ mkdir -p "$APP_NAME/Contents/Resources"
 cp "$BUILD_PATH" "$APP_NAME/Contents/MacOS/SaarasTranslator"
 chmod +x "$APP_NAME/Contents/MacOS/SaarasTranslator"
 
-# Copy Swift Package Manager resource bundles into Contents/Resources
-# so the app bundle structure is valid and code signing works properly.
-# SPM's Bundle.module checks Bundle.main.resourceURL (Contents/Resources/) first.
+# Copy Swift Package Manager resource bundles into Contents/Resources.
+# Note: SwiftPM's generated Bundle.module does NOT look there (only at the .app root,
+# which codesign rejects, and at this machine's absolute .build path). The vendored
+# Vendor/KeyboardShortcuts patches its bundle lookup to check Contents/Resources first.
 BUILD_DIR=$(dirname "$BUILD_PATH")
 for bundle in "$BUILD_DIR"/*.bundle; do
     if [ -d "$bundle" ]; then
@@ -207,7 +208,7 @@ cat > "$APP_NAME/Contents/Info.plist" << 'EOF'
     <key>CFBundlePackageType</key>
     <string>APPL</string>
     <key>CFBundleShortVersionString</key>
-    <string>1.0.0</string>
+    <string>1.1.0</string>
     <key>CFBundleVersion</key>
     <string>1</string>
     <key>LSMinimumSystemVersion</key>
@@ -224,9 +225,17 @@ EOF
 
 echo -e "${GREEN}✅ App bundle created: $APP_NAME${NC}"
 
-# Code sign
-# Sign with bundle identifier so macOS TCC permissions persist across rebuilds
-codesign --force --deep --sign - --identifier com.vaani.app "$APP_NAME" 2>/dev/null || true
+# Code sign. A stable local identity (scripts/make-signing-cert.sh) keeps the app's
+# designated requirement constant, so Microphone/Accessibility/keychain grants survive
+# rebuilds and updates. Ad-hoc signing (cdhash-based) makes macOS re-ask after every build.
+SIGN_NAME="Vaani Local Signing"
+if security find-identity -v -p codesigning 2>/dev/null | grep -q "$SIGN_NAME"; then
+    echo "Signing with '$SIGN_NAME'..."
+    codesign --force --deep --sign "$SIGN_NAME" --identifier com.vaani.app "$APP_NAME"
+else
+    echo -e "${YELLOW}⚠️  Ad-hoc signing (run scripts/make-signing-cert.sh once to keep permissions across updates)${NC}"
+    codesign --force --deep --sign - --identifier com.vaani.app "$APP_NAME" 2>/dev/null || true
+fi
 
 # Skip DMG creation for source builds (pass --dmg to create DMG)
 if [[ "$1" != "--dmg" ]]; then
@@ -247,7 +256,7 @@ fi
 # Create enhanced DMG installer with Quick Install script
 echo ""
 echo "Creating enhanced DMG installer..."
-DMG_NAME="Vaani-v1.0.0-macOS.dmg"
+DMG_NAME="Vaani-v1.1.0-macOS.dmg"
 
 TMP_DMG_DIR=$(mktemp -d)
 cp -R "$APP_NAME" "$TMP_DMG_DIR/"
@@ -346,17 +355,25 @@ cat > "$TMP_DMG_DIR/READ ME.txt" << 'README_EOF'
 INSTALLATION (Choose One Method)
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-✅ OPTION 1: Quick Install (Recommended - No Security Warnings)
+✅ OPTION 1: Homebrew (Recommended - no security warnings, easy updates)
 
-   1. Double-click "🚀 Quick Install.command"
+   Open Terminal and run:
+      brew tap jayjpatel9717/vaani
+      brew install --cask vaani
+
+🚀 OPTION 2: Quick Install script
+
+   1. Right-click "🚀 Quick Install.command" and choose "Open"
+      (double-clicking is blocked on macOS 15+ because the script is
+      unsigned; right-click → Open shows an "Open" button instead)
    2. Click "Install" when prompted
    3. Done!
 
-   This automatically removes quarantine attributes and installs
-   Vaani to Applications with ZERO security warnings.
+   This removes the quarantine attribute and installs Vaani to
+   Applications so it launches without further warnings.
 
 
-📁 OPTION 2: Manual Install (Traditional Drag-Drop)
+📁 OPTION 3: Manual Install (Traditional Drag-Drop)
 
    1. Drag "Vaani.app" to "Applications" folder
    2. Open Terminal and run:

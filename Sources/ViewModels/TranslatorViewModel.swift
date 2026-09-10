@@ -1,6 +1,10 @@
 import Foundation
 import Combine
 import SwiftUI
+import AVFoundation
+import os
+
+private let vmLog = Logger(subsystem: "com.vaani.app", category: "pipeline")
 
 @MainActor
 class TranslatorViewModel: ObservableObject {
@@ -18,13 +22,19 @@ class TranslatorViewModel: ObservableObject {
     @Published var appearanceMode: AppearanceMode = .system
     @Published var history: [HistoryItem] = []
     @Published var accessibilityGranted: Bool = false
-    @Published var apiKeyValid: Bool = true
+    @Published var apiKeyStatus: APIKeyStatus = .unknown
+    @Published var micGranted: Bool = AVCaptureDevice.authorizationStatus(for: .audio) == .authorized
+    @Published var hudState: HUDState = .hidden
+    @Published var setupCompleted: Bool = UserDefaults.standard.bool(forKey: "setupCompleted") {
+        didSet { UserDefaults.standard.set(setupCompleted, forKey: "setupCompleted") }
+    }
+    var apiKeyValid: Bool { apiKeyStatus == .ok || apiKeyStatus == .unknown }
 
     private let audioRecorder = AudioRecorder()
     private let apiClient = SaarasAPIClient()
     private let keychainManager = KeychainManager()
     private var recordingURL: URL?
-    private var recordingStartTime: Date?
+    @Published private(set) var recordingStartTime: Date?
     private var cancellables = Set<AnyCancellable>()
     private var accessibilityTimer: Timer?
 
@@ -38,14 +48,15 @@ class TranslatorViewModel: ObservableObject {
         // Defer Keychain read to avoid macOS permission dialog on first launch.
         // API key is loaded lazily when Settings is opened or recording starts.
 
-        // Check accessibility permission and poll until granted
+        // Poll permissions until both are granted (System Settings changes don't notify us)
         accessibilityGranted = PasteboardManager.hasAccessibilityPermission()
-        if !accessibilityGranted {
+        if !accessibilityGranted || !micGranted {
             accessibilityTimer = Timer.scheduledTimer(withTimeInterval: 2.0, repeats: true) { [weak self] timer in
                 Task { @MainActor in
                     guard let self = self else { timer.invalidate(); return }
-                    if PasteboardManager.hasAccessibilityPermission() {
-                        self.accessibilityGranted = true
+                    self.accessibilityGranted = PasteboardManager.hasAccessibilityPermission()
+                    self.micGranted = AVCaptureDevice.authorizationStatus(for: .audio) == .authorized
+                    if self.accessibilityGranted && self.micGranted {
                         timer.invalidate()
                         self.accessibilityTimer = nil
                     }
@@ -93,21 +104,32 @@ class TranslatorViewModel: ObservableObject {
             .assign(to: &$isRecording)
     }
 
+    func requestMicPermission() {
+        audioRecorder.requestMicPermission { [weak self] granted in
+            Task { @MainActor in self?.micGranted = granted }
+        }
+    }
+
     func startRecording() {
         guard !isRecording && !isProcessing else { return }
+        apiClient.warmUp()
 
         audioRecorder.requestMicPermission { [weak self] granted in
             guard let self = self else { return }
+            self.micGranted = granted
             if granted {
                 do {
                     self.recordingURL = try self.audioRecorder.startRecording()
                     self.recordingStartTime = Date()
                     self.lastError = nil
+                    self.hudState = .listening
                 } catch {
                     self.lastError = "Failed to start recording: \(error.localizedDescription)"
+                    self.hudState = .error(self.lastError ?? "")
                 }
             } else {
                 self.lastError = "Microphone permission denied. Please enable in System Settings > Privacy & Security > Microphone."
+                self.hudState = .error("Microphone access denied \u{2014} allow it in System Settings")
             }
         }
     }
@@ -120,11 +142,13 @@ class TranslatorViewModel: ObservableObject {
             _ = audioRecorder.stopRecording()
             audioRecorder.cleanup()
             lastError = "Recording too short. Hold longer to record."
+            hudState = .error("Too short \u{2014} hold the key while you speak")
             return
         }
 
         guard let url = audioRecorder.stopRecording() else {
             lastError = "Failed to stop recording"
+            hudState = .error("Failed to stop recording")
             return
         }
 
@@ -144,11 +168,15 @@ class TranslatorViewModel: ObservableObject {
 
         if recentRequests.count >= maxRequestsPerMinute {
             lastError = "Too many requests. Please wait a moment."
+            hudState = .error("Too many requests \u{2014} wait a moment")
             return
         }
 
         guard hasAPIKey() else {
+            vmLog.error("pipeline: no API key readable from keychain")
+            apiKeyStatus = .missing
             lastError = "API key not configured. Add your API key in Settings."
+            hudState = .error("Add your Sarvam API key in Settings")
             showSettings = true
             return
         }
@@ -160,6 +188,7 @@ class TranslatorViewModel: ObservableObject {
 
         isProcessing = true
         lastError = nil
+        hudState = .translating(since: Date())
 
         // Capture values for detached task (can't access @MainActor properties there)
         let mode = selectedMode
@@ -173,6 +202,7 @@ class TranslatorViewModel: ObservableObject {
             do {
                 // 1. Convert to 16kHz Int16 mono + split into ≤28s chunks
                 let chunks = try AudioChunker.convertAndSplit(audioURL: url)
+                vmLog.info("pipeline: \(chunks.count) chunk(s), mode \(mode.rawValue, privacy: .public), key length \(key.count)")
 
                 // 2. Transcribe all chunks in parallel, combine results
                 let result = try await client.transcribeChunks(
@@ -191,6 +221,12 @@ class TranslatorViewModel: ObservableObject {
                     // Rate limiting
                     for _ in chunks {
                         self.recentRequests.append(Date())
+                    }
+
+                    if result.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                        self.hudState = .error("Nothing heard \u{2014} speak louder or raise input volume")
+                    } else {
+                        self.hudState = .done(self.accessibilityGranted ? "Pasted" : "Copied \u{2014} press \u{2318}V to paste")
                     }
 
                     // Save to history + auto-paste only if non-empty
@@ -214,22 +250,29 @@ class TranslatorViewModel: ObservableObject {
                 recorder.cleanupAll(chunkURLs: chunks)
 
             } catch let error as AudioChunkerError {
+                vmLog.error("pipeline: chunker error \(String(describing: error), privacy: .public)")
                 await MainActor.run { [weak self] in
                     self?.lastError = error.localizedDescription
                     self?.isProcessing = false
+                    self?.hudState = .error(error.localizedDescription)
                 }
             } catch let error as APIError {
+                vmLog.error("pipeline: API error \(String(describing: error), privacy: .public)")
                 await MainActor.run { [weak self] in
+                    if case .httpError(let code) = error {
+                        if code == 401 || code == 403 { self?.apiKeyStatus = .invalid }
+                        if code == 402 { self?.apiKeyStatus = .noCredits }
+                    }
                     self?.lastError = error.localizedDescription
                     self?.isProcessing = false
-                    if case .httpError(let code) = error, code == 401 || code == 403 {
-                        self?.apiKeyValid = false
-                    }
+                    self?.hudState = .error(error.localizedDescription)
                 }
             } catch {
+                vmLog.error("pipeline: failed \(String(describing: error), privacy: .public)")
                 await MainActor.run { [weak self] in
                     self?.lastError = "Translation failed: \(error.localizedDescription)"
                     self?.isProcessing = false
+                    self?.hudState = .error("Translation failed: \(error.localizedDescription)")
                 }
             }
         }
@@ -251,9 +294,13 @@ class TranslatorViewModel: ObservableObject {
         keychainLoaded = true
         if let savedKey = keychainManager.getAPIKey() {
             apiKey = savedKey
+            // Existing installs that already have a key skip the first-run checklist
+            if UserDefaults.standard.object(forKey: "setupCompleted") == nil {
+                setupCompleted = true
+            }
             validateAPIKey()
         } else {
-            apiKeyValid = false
+            apiKeyStatus = .missing
         }
     }
 
@@ -263,21 +310,17 @@ class TranslatorViewModel: ObservableObject {
     }
 
     func validateAPIKey() {
-        guard hasAPIKey() else {
-            apiKeyValid = false
-            return
-        }
-        let key = apiKey.isEmpty ? (keychainManager.getAPIKey() ?? "") : apiKey
+        let key = hasAPIKey() ? (apiKey.isEmpty ? (keychainManager.getAPIKey() ?? "") : apiKey) : ""
         guard !key.isEmpty else {
-            apiKeyValid = false
+            apiKeyStatus = .missing
             return
         }
         Task {
-            let valid = await apiClient.validateKey(apiKey: key)
+            let status = await apiClient.validateKey(apiKey: key)
             await MainActor.run {
-                self.apiKeyValid = valid
-                if !valid {
-                    self.lastError = "API key invalid or expired. Update in Settings."
+                self.apiKeyStatus = status
+                if let message = status.message {
+                    self.lastError = message
                 }
             }
         }

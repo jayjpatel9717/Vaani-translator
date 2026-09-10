@@ -9,6 +9,8 @@ A tiny macOS menubar app that turns your voice into text — in 23 Indian langua
 
 > **Hold to speak. Release to translate. Done.**
 
+![Vaani — ready, listening, translating](docs/screenshot.png)
+
 ---
 
 ## Table of Contents
@@ -43,7 +45,7 @@ No Gatekeeper warnings. Updates with `brew upgrade`. Clean uninstall with `brew 
 
 ### Download DMG
 
-Grab the latest `.dmg` from [Releases](https://github.com/jayjpatel9717/Vaani-translator/releases/latest). Double-click the Quick Install script — zero security warnings.
+Grab the latest `.dmg` from [Releases](https://github.com/jayjpatel9717/Vaani-translator/releases/latest). Right-click the Quick Install script and choose **Open** (macOS 15+ blocks a plain double-click on unsigned scripts), then click Install.
 
 ### Build from Source
 
@@ -59,10 +61,10 @@ Requires Xcode Command Line Tools and Swift 5.9+.
 
 ## Quick Start
 
-1. **Launch** — a mic icon appears in your menubar
-2. **Add API key** — click mic icon > gear icon > paste your [Sarvam AI](https://dashboard.sarvam.ai/key-management) API key > Save
-3. **Grant permissions** — allow Microphone and Accessibility when prompted
-4. **Speak** — hold `fn` (globe key) or `Ctrl+Space`, say something, release — text appears at your cursor
+1. **Launch** — a mic icon appears in your menubar and the welcome checklist opens
+2. **Add API key** — paste your [Sarvam AI](https://dashboard.sarvam.ai/key-management) key; Vaani checks it live ("Key OK")
+3. **Allow Microphone and Accessibility** — one button each, with a green tick when done
+4. **Speak** — hold `fn` (globe key) or `Ctrl+Space`, say something, release — a status pill shows *Listening → Translating → Pasted* and the text lands at your cursor
 
 That's it. No windows to manage, no app switching. Works from any app.
 
@@ -83,9 +85,12 @@ That's it. No windows to manage, no app switching. Works from any app.
 
 ### Experience
 
-- **Dark & Light theme** — follows system appearance, or toggle from the main screen
-- **Compact UI** — small 320px popover that stays out of your way
-- **Live audio visualization** — waveform feedback while recording
+- **Soft Glass interface** — mesh-gradient popover, frosted cards, a gradient orb that pulses while you speak and spins while translating
+- **Floating status pill** — Listening / Translating / Pasted / error feedback on whatever screen you are working on, independent of the menubar
+- **First-run checklist** — key, microphone, accessibility and a try-it step, each with a live tick
+- **Clear failure states** — out-of-credits, invalid key and "nothing heard" are explained in place with the right next action
+- **Dark & Light theme** — follows system appearance, or pick in Settings
+- **Fast turnaround** — connection opens when you press the key, audio is recorded straight at 16 kHz, no conversion step after release
 - **Native SwiftUI** — no Electron, no web views, minimal memory footprint
 
 ### Security
@@ -146,11 +151,13 @@ Customize your shortcut in Settings > Shortcuts.
 | **Microphone** | Record your voice |
 | **Accessibility** | Auto-paste at cursor and global hotkey monitoring |
 
-If hotkeys stop working after a rebuild, reset Accessibility:
+Builds are signed with a stable local certificate (`scripts/make-signing-cert.sh`), so these grants survive updates. If you build from source without running that script once, macOS asks again after every build. To reset by hand:
 
 ```bash
 tccutil reset Accessibility com.vaani.app
 ```
+
+When the keychain asks whether Vaani may use its saved key, choose **Always Allow**.
 
 ---
 
@@ -165,8 +172,11 @@ Sources/
   ViewModels/
     TranslatorViewModel.swift    # State, recording, API calls, rate limiting
   Views/
-    MainView.swift               # Main popover UI
-    SettingsView.swift            # Settings (API key, shortcuts)
+    MainView.swift               # Popover: ready / listening / translating / result / error states
+    SetupView.swift              # First-run checklist
+    SettingsView.swift           # Settings (API key, shortcuts, appearance)
+    StatusHUD.swift              # Floating status pill (NSPanel + SwiftUI)
+    Glass.swift                  # Shared Soft Glass components (orb, cards, pills, segmented)
   Services/
     AudioRecorder.swift          # AVAudioEngine recording
     SaarasAPIClient.swift        # Sarvam AI API client with TLS validation
@@ -174,9 +184,14 @@ Sources/
     PasteboardManager.swift      # Multi-strategy auto-paste
     FnKeyMonitor.swift           # CGEventTap fn key listener
   Theme/
-    AppTheme.swift               # Adaptive design tokens (dark/light)
+    AppTheme.swift               # Soft Glass design tokens (light/dark)
   Utils/
-    AudioChunker.swift           # Audio format conversion + chunking
+    AudioChunker.swift           # Audio chunking (+ afconvert fallback)
+Vendor/KeyboardShortcuts/        # sindresorhus/KeyboardShortcuts 1.14.0, resource-bundle lookup patched
+Tests/
+  BundleCheck/run.sh             # Regression check for the resource-bundle crash
+  snapshots.sh                   # Renders every screen to PNG (VAANI_SNAPSHOT_DIR)
+scripts/make-signing-cert.sh     # One-time local signing identity
 ```
 
 ---
@@ -212,8 +227,9 @@ See [TROUBLESHOOTING.md](TROUBLESHOOTING.md) for common issues:
 - macOS security warnings (Gatekeeper)
 - Microphone or Accessibility permissions
 - Hotkeys not responding
+- "Translation failed" / out of credits
+- Reading Vaani's log
 - Build errors on Intel Macs
-- API key and network issues
 
 ---
 

@@ -237,6 +237,37 @@ killall SystemUIServer
 
 ---
 
+### "Translation failed" / "Your Sarvam account is out of credits"
+
+The API key is valid but the Sarvam account balance is zero; every request returns HTTP 402. Add credits at [dashboard.sarvam.ai](https://dashboard.sarvam.ai), then press **Check again** in the popover (or just speak again). Nothing needs reconfiguring.
+
+### "Nothing heard — speak louder or raise input volume"
+
+Sarvam returned an empty transcript. Usually the Mac's input level is low: System Settings → Sound → Input, raise the slider, and check the right microphone is selected.
+
+### Reading Vaani's log
+
+Every API response and pipeline error is written to the unified log (no key material is logged):
+
+```bash
+/usr/bin/log show --predicate 'subsystem == "com.vaani.app"' --last 10m --info
+```
+
+Use the full path: in zsh, plain `log` is a shell builtin and prints "too many arguments".
+
+### macOS asks for Microphone / Accessibility / keychain again after an update
+
+Ad-hoc signed builds change identity on every build. Release builds are signed with a stable certificate, so grants survive updates. Building from source: run `scripts/make-signing-cert.sh` once, then `./build.sh`. When the keychain dialog appears, choose **Always Allow**.
+
+### "Quick Install.command" won't open on macOS 15+
+
+Gatekeeper blocks a plain double-click on the unsigned script. Right-click it and choose **Open**, or install with Homebrew:
+
+```bash
+brew tap jayjpatel9717/vaani
+brew install --cask vaani
+```
+
 ## Intel Mac Issues
 
 ### "Build failed: Universal build not supported"
