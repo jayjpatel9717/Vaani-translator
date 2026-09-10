@@ -26,6 +26,14 @@ struct AudioChunker {
     /// Recording can be in any format (48kHz Float32, etc.) — this handles conversion.
     /// Returns ordered array of chunk file URLs ready for the API.
     static func convertAndSplit(audioURL: URL, maxDuration: TimeInterval = maxChunkDuration) throws -> [URL] {
+        // Already 16kHz Int16 mono (AudioRecorder converts while recording)? Skip afconvert.
+        if let file = try? AVAudioFile(forReading: audioURL),
+           file.fileFormat.sampleRate == targetSampleRate,
+           file.fileFormat.channelCount == 1,
+           file.fileFormat.commonFormat == .pcmFormatInt16 {
+            return try split(audioURL: audioURL, maxDuration: maxDuration)
+        }
+
         // Step 1: Convert to 16kHz Int16 mono using afconvert (reliable, works on all Macs)
         let convertedURL = audioURL.deletingLastPathComponent()
             .appendingPathComponent(audioURL.deletingPathExtension().lastPathComponent + "_converted.wav")

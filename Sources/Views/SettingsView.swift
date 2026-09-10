@@ -1,176 +1,161 @@
 import SwiftUI
+import AppKit
 import KeyboardShortcuts
 
 struct SettingsView: View {
     @EnvironmentObject var viewModel: TranslatorViewModel
     @Environment(\.colorScheme) private var colorScheme
-
-    @State private var showAPIKeyText = false
-    @State private var savedConfirmation = false
+    @State private var showKey = false
+    @State private var editingKey = false
 
     private var theme: AppTheme { AppTheme(colorScheme) }
 
     var body: some View {
         VStack(spacing: 0) {
-            // Header
-            HStack {
-                Text("Settings")
-                    .font(.system(size: 14, weight: .semibold))
+            HStack(spacing: 10) {
+                VStack(alignment: .leading, spacing: 1) {
+                    Text("Settings").font(.glass(20, .heavy)).foregroundColor(theme.ink)
+                    Text("Vaani 1.1 \u{00B7} Sarvam AI").font(.glass(11, .semibold)).foregroundColor(theme.secondary)
+                }
                 Spacer()
-                Button(action: { viewModel.showSettings = false }) {
-                    Image(systemName: "xmark.circle.fill")
-                        .font(.system(size: 16))
-                        .foregroundColor(.secondary)
+                IconCircleButton(systemName: "xmark", theme: theme) { viewModel.showSettings = false }
+            }
+            Spacer().frame(height: 14)
+
+            VStack(spacing: 8) {
+                keyCard
+                row("Hold to speak", sub: "Click to record a new shortcut") {
+                    KeyboardShortcuts.Recorder(for: .record).controlSize(.small)
+                }
+                row("fn / globe key", sub: "Hold fn anywhere to speak") {
+                    Toggle("", isOn: $viewModel.useFnKey).toggleStyle(.switch).controlSize(.small).labelsHidden().tint(AppTheme.violet)
+                }
+                row("Type for me", sub: viewModel.accessibilityGranted ? "Accessibility granted" : "Needs Accessibility permission") {
+                    if viewModel.accessibilityGranted {
+                        StatusChip(text: "On", color: AppTheme.mint, textColor: theme.successText)
+                    } else {
+                        PillButton(title: "Grant", primary: true, theme: theme) {
+                            PasteboardManager.requestAccessibilityPermission()
+                            if let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility") {
+                                NSWorkspace.shared.open(url)
+                            }
+                        }
+                    }
+                }
+                row("Appearance", sub: nil) {
+                    GlassSegmented(items: AppearanceMode.allCases.map { ($0, $0.displayName) }, selection: $viewModel.appearanceMode, theme: theme, height: 22)
+                        .frame(width: 150)
+                }
+            }
+
+            Spacer()
+
+            HStack {
+                Button("Run setup again") {
+                    viewModel.setupCompleted = false
+                    viewModel.showSettings = false
+                }
+                .buttonStyle(.plain)
+                Spacer()
+                Link(destination: URL(string: "https://dashboard.sarvam.ai")!) {
+                    HStack(spacing: 3) {
+                        Text("Sarvam dashboard")
+                        Image(systemName: "arrow.up.right").font(.system(size: 8, weight: .bold))
+                    }
+                    .foregroundColor(AppTheme.violet)
+                }
+            }
+            .font(.glass(10, .bold))
+            .foregroundColor(theme.secondary)
+        }
+    }
+
+    private var keyCard: some View {
+        VStack(spacing: 8) {
+            HStack(spacing: 8) {
+                Image(systemName: "key.fill").font(.system(size: 11, weight: .semibold)).foregroundColor(theme.secondary)
+                if editingKey || viewModel.apiKey.isEmpty {
+                    Group {
+                        if showKey {
+                            TextField("sk_...", text: $viewModel.apiKey)
+                        } else {
+                            SecureField("sk_...", text: $viewModel.apiKey)
+                        }
+                    }
+                    .textFieldStyle(.plain)
+                    .font(.system(size: 11, design: .monospaced))
+                    .foregroundColor(theme.ink)
+                } else {
+                    Text(maskedKey).font(.system(size: 11, design: .monospaced)).tracking(1).foregroundColor(theme.secondary).lineLimit(1)
+                    Spacer()
+                }
+                Button(action: { showKey.toggle() }) {
+                    Image(systemName: showKey ? "eye.slash" : "eye").font(.system(size: 11)).foregroundColor(theme.secondary)
                 }
                 .buttonStyle(.plain)
             }
-            .padding(.horizontal, 16)
-            .padding(.vertical, 10)
-
-            Divider()
-
-            VStack(spacing: 14) {
-                // MARK: - API Key
-                VStack(alignment: .leading, spacing: 6) {
-                    Text("API KEY")
-                        .font(.system(size: 10, weight: .semibold))
-                        .foregroundColor(theme.sectionHeaderColor)
-
-                    HStack(spacing: 6) {
-                        if showAPIKeyText {
-                            TextField("sk_...", text: $viewModel.apiKey)
-                                .textFieldStyle(.roundedBorder)
-                                .font(.system(size: 11, design: .monospaced))
-                        } else {
-                            SecureField("sk_...", text: $viewModel.apiKey)
-                                .textFieldStyle(.roundedBorder)
-                                .font(.system(size: 11))
-                        }
-
-                        Button(action: { showAPIKeyText.toggle() }) {
-                            Image(systemName: showAPIKeyText ? "eye.slash" : "eye")
-                                .font(.system(size: 11))
-                                .foregroundColor(.secondary)
-                        }
-                        .buttonStyle(.plain)
-                    }
-
-                    HStack(spacing: 6) {
-                        Button(action: {
-                            if let text = NSPasteboard.general.string(forType: .string) {
-                                viewModel.apiKey = text.trimmingCharacters(in: .whitespacesAndNewlines)
-                            }
-                        }) {
-                            Text("Paste")
-                                .font(.system(size: 10))
-                        }
-                        .controlSize(.small)
-
-                        Button(action: {
-                            viewModel.saveAPIKey()
-                            savedConfirmation = true
-                            DispatchQueue.main.asyncAfter(deadline: .now() + 2) {
-                                savedConfirmation = false
-                            }
-                        }) {
-                            Text(savedConfirmation ? "Saved" : "Save")
-                                .font(.system(size: 10))
-                        }
-                        .controlSize(.small)
-                        .tint(savedConfirmation ? .green : nil)
-
-                        Spacer()
-
-                        Circle()
-                            .fill(!viewModel.apiKey.isEmpty ? theme.statusSuccess : theme.statusWarning)
-                            .frame(width: 6, height: 6)
-                        Text("Keychain")
-                            .font(.system(size: 9))
-                            .foregroundColor(theme.sectionHeaderColor)
-                    }
-                }
-
-                Divider()
-
-                // MARK: - Shortcuts
-                VStack(alignment: .leading, spacing: 6) {
-                    Text("SHORTCUTS")
-                        .font(.system(size: 10, weight: .semibold))
-                        .foregroundColor(theme.sectionHeaderColor)
-
-                    HStack {
-                        Text("Hold to speak")
-                            .font(.system(size: 11))
-                        Spacer()
-                        KeyboardShortcuts.Recorder(for: .record)
-                    }
-
-                    Divider()
-
-                    HStack {
-                        Text("fn (globe) key")
-                            .font(.system(size: 11))
-                        Spacer()
-                        Toggle("", isOn: $viewModel.useFnKey)
-                            .toggleStyle(.switch)
-                            .controlSize(.mini)
-                            .labelsHidden()
-                    }
-
-                    Divider()
-
-                    HStack(spacing: 4) {
-                        Text("Auto-paste")
-                            .font(.system(size: 11))
-                        Spacer()
-                        Circle()
-                            .fill(viewModel.accessibilityGranted ? theme.statusSuccess : theme.statusWarning)
-                            .frame(width: 6, height: 6)
-                        Text(viewModel.accessibilityGranted ? "On" : "Off")
-                            .font(.system(size: 10))
-                            .foregroundColor(.secondary)
-                        if !viewModel.accessibilityGranted {
-                            Button("Grant") {
-                                PasteboardManager.requestAccessibilityPermission()
-                            }
-                            .controlSize(.mini)
+            HStack(spacing: 6) {
+                StatusChip(text: statusText, color: statusColor, textColor: statusTextColor)
+                Spacer()
+                Link("Get a key", destination: URL(string: "https://dashboard.sarvam.ai/key-management")!)
+                    .font(.glass(10, .bold)).foregroundColor(AppTheme.violet)
+                if editingKey || viewModel.apiKey.isEmpty {
+                    PillButton(title: "Paste", theme: theme) {
+                        if let text = NSPasteboard.general.string(forType: .string) {
+                            viewModel.apiKey = text.trimmingCharacters(in: .whitespacesAndNewlines)
                         }
                     }
-                }
-
-                Divider()
-
-                // MARK: - About
-                HStack(spacing: 6) {
-                    Image(systemName: "mic.fill")
-                        .font(.system(size: 14))
-                        .foregroundColor(theme.brandBlue)
-                    Text("Vaani v1.0.0")
-                        .font(.system(size: 11, weight: .medium))
-                    Text("\u{00B7} Sarvam AI")
-                        .font(.system(size: 10))
-                        .foregroundColor(theme.sectionHeaderColor)
-                    Spacer()
+                    PillButton(title: "Save", primary: true, theme: theme) {
+                        viewModel.saveAPIKey()
+                        editingKey = false
+                    }
+                } else {
+                    PillButton(title: "Replace", theme: theme) { editingKey = true }
                 }
             }
-            .padding(16)
-
-            Spacer()
         }
-        .frame(width: 320, height: 380)
+        .padding(EdgeInsets(top: 10, leading: 12, bottom: 10, trailing: 12))
+        .glassCard(theme)
     }
-}
 
-struct SettingsRow<Content: View>: View {
-    let label: String
-    @ViewBuilder let content: Content
+    private var maskedKey: String {
+        let key = viewModel.apiKey
+        let tail = key.count > 4 ? String(key.suffix(4)) : ""
+        return "sk_\u{2022}\u{2022}\u{2022}\u{2022}\u{2022}\u{2022}\u{2022}\u{2022}\u{2022}\u{2022}\u{2022}\u{2022}\u{2022}\u{2022}\u{2022}\u{2022} \(tail)"
+    }
 
-    var body: some View {
-        HStack {
-            Text(label)
-                .font(.system(size: 12))
-            Spacer()
-            content
+    private var statusText: String {
+        viewModel.apiKeyStatus == .unknown && viewModel.apiKey.isEmpty ? "No key saved" : viewModel.apiKeyStatus.label
+    }
+
+    private var statusColor: Color {
+        switch viewModel.apiKeyStatus {
+        case .ok: return AppTheme.mint
+        case .invalid, .noCredits: return AppTheme.amber
+        case .missing, .unknown: return theme.tertiary
         }
+    }
+
+    private var statusTextColor: Color {
+        switch viewModel.apiKeyStatus {
+        case .ok: return theme.successText
+        case .invalid, .noCredits: return theme.warningText
+        case .missing, .unknown: return theme.secondary
+        }
+    }
+
+    private func row<Right: View>(_ label: String, sub: String?, @ViewBuilder right: () -> Right) -> some View {
+        HStack(spacing: 10) {
+            VStack(alignment: .leading, spacing: 1) {
+                Text(label).font(.glass(12, .bold)).foregroundColor(theme.ink)
+                if let sub {
+                    Text(sub).font(.glass(10, .semibold)).foregroundColor(theme.secondary)
+                }
+            }
+            Spacer()
+            right()
+        }
+        .padding(EdgeInsets(top: 9, leading: 12, bottom: 9, trailing: 12))
+        .glassCard(theme)
     }
 }

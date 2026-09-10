@@ -5,6 +5,8 @@ class AudioRecorder: NSObject, ObservableObject {
     private var audioEngine: AVAudioEngine?
     private var inputNode: AVAudioInputNode?
     private var audioFile: AVAudioFile?
+    private var converter: AVAudioConverter?
+    private static let targetFormat = AVAudioFormat(commonFormat: .pcmFormatInt16, sampleRate: 16000, channels: 1, interleaved: true)!
     private var recordingURL: URL?
 
     @Published var isRecording = false
@@ -51,12 +53,19 @@ class AudioRecorder: NSObject, ObservableObject {
             throw RecordingError.fileCreationFailed
         }
 
-        // Record in the mic's native format (typically 48kHz Float32)
-        // Conversion to 16kHz Int16 happens AFTER recording in the processing phase
+        // Convert to 16kHz Int16 mono while recording so the upload needs no post-processing.
+        // ponytail: if the converter can't be built for this device, fall back to the native
+        // format and let AudioChunker run afconvert afterwards.
         let nativeFormat = input.outputFormat(forBus: 0)
+        converter = AVAudioConverter(from: nativeFormat, to: Self.targetFormat)
 
         do {
-            audioFile = try AVAudioFile(forWriting: url, settings: nativeFormat.settings)
+            if converter != nil {
+                audioFile = try AVAudioFile(forWriting: url, settings: Self.targetFormat.settings,
+                                            commonFormat: .pcmFormatInt16, interleaved: true)
+            } else {
+                audioFile = try AVAudioFile(forWriting: url, settings: nativeFormat.settings)
+            }
         } catch {
             throw RecordingError.fileCreationFailed
         }
@@ -79,12 +88,15 @@ class AudioRecorder: NSObject, ObservableObject {
                 }
             }
 
-            // Write raw audio buffer to file
-            do {
-                try file.write(from: buffer)
-            } catch {
-                // Non-fatal write error
+            // Write (converted) audio buffer to file
+            let toWrite: AVAudioPCMBuffer
+            if let converter = self.converter {
+                guard let converted = Self.convert(buffer, with: converter) else { return }
+                toWrite = converted
+            } else {
+                toWrite = buffer
             }
+            try? file.write(from: toWrite)
         }
 
         try engine.start()
@@ -94,6 +106,24 @@ class AudioRecorder: NSObject, ObservableObject {
         }
 
         return url
+    }
+
+    private static func convert(_ buffer: AVAudioPCMBuffer, with converter: AVAudioConverter) -> AVAudioPCMBuffer? {
+        let ratio = targetFormat.sampleRate / buffer.format.sampleRate
+        let capacity = AVAudioFrameCount(Double(buffer.frameLength) * ratio) + 64
+        guard let out = AVAudioPCMBuffer(pcmFormat: targetFormat, frameCapacity: capacity) else { return nil }
+        var supplied = false
+        var error: NSError?
+        let status = converter.convert(to: out, error: &error) { _, outStatus in
+            if supplied {
+                outStatus.pointee = .noDataNow
+                return nil
+            }
+            supplied = true
+            outStatus.pointee = .haveData
+            return buffer
+        }
+        return status == .error ? nil : out
     }
 
     func stopRecording() -> URL? {
