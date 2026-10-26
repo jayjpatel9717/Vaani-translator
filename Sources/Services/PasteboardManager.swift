@@ -2,160 +2,132 @@ import AppKit
 import Foundation
 import ApplicationServices
 
-class PasteboardManager {
-
-    static func hasAccessibilityPermission() -> Bool {
-        return AXIsProcessTrusted()
+@MainActor
+final class PasteboardManager {
+    enum Outcome {
+        case sent, copied, clipboardChanged
+        var message: String {
+            switch self {
+            case .sent: return "Paste sent"
+            case .copied: return "Copied — press ⌘V to paste"
+            case .clipboardChanged: return "Clipboard changed — text is in Vaani history"
+            }
+        }
     }
+
+    private static var deliveryGeneration = 0
+    private static var activationObserver: NSObjectProtocol?
+    private static var lastExternalApp: NSRunningApplication?
+
+    static func hasAccessibilityPermission() -> Bool { AXIsProcessTrusted() }
 
     static func requestAccessibilityPermission() {
         let options = [kAXTrustedCheckOptionPrompt.takeUnretainedValue(): true] as CFDictionary
         AXIsProcessTrustedWithOptions(options)
     }
 
-    /// Copies text to clipboard AND inserts at cursor position
-    static func pasteText(_ text: String) {
-        // Always copy to clipboard so user can also manually Cmd+V
-        let pasteboard = NSPasteboard.general
-        pasteboard.clearContents()
-        pasteboard.setString(text, forType: .string)
-
-        guard AXIsProcessTrusted() else {
-            log("SKIP: no accessibility permission")
-            return
-        }
-
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) {
-            let app = NSWorkspace.shared.frontmostApplication
-            log("Frontmost: \(app?.localizedName ?? "nil") pid=\(app?.processIdentifier ?? 0)")
-
-            // Strategy 1: Direct text insertion via AXSelectedText
-            let s1 = insertTextAtCursor(text)
-            log("Strategy 1 (AXSelectedText): \(s1 ? "OK" : "FAIL")")
-            if s1 { return }
-
-            // Strategy 2: Trigger Paste menu item via Accessibility API
-            let s2 = performPasteViaMenu()
-            log("Strategy 2 (Menu Paste): \(s2 ? "OK" : "FAIL")")
-            if s2 { return }
-
-            // Strategy 3: CGEvent Cmd+V (session level, bypasses HID taps)
-            log("Strategy 3 (CGEvent cgSessionEventTap)")
-            simulateCmdV()
+    /// Remember the user's editor even when opening Vaani's popover takes focus.
+    static func startTrackingFocus() {
+        guard activationObserver == nil else { return }
+        remember(NSWorkspace.shared.frontmostApplication)
+        activationObserver = NSWorkspace.shared.notificationCenter.addObserver(
+            forName: NSWorkspace.didActivateApplicationNotification, object: nil, queue: .main
+        ) { note in
+            let app = note.userInfo?[NSWorkspace.applicationUserInfoKey] as? NSRunningApplication
+            Task { @MainActor in remember(app) }
         }
     }
 
-    // MARK: - Strategy 1: Direct text insertion
-
-    private static func insertTextAtCursor(_ text: String) -> Bool {
-        let systemWide = AXUIElementCreateSystemWide()
-        var focusedElement: AnyObject?
-
-        let copyResult = AXUIElementCopyAttributeValue(
-            systemWide,
-            kAXFocusedUIElementAttribute as CFString,
-            &focusedElement
-        )
-
-        guard copyResult == .success, let element = focusedElement else {
-            log("  AX focused element: not found (\(copyResult.rawValue))")
-            return false
+    private static func remember(_ app: NSRunningApplication?) {
+        if let app, app.processIdentifier != ProcessInfo.processInfo.processIdentifier,
+           app.activationPolicy == .regular, !app.isTerminated {
+            lastExternalApp = app
         }
-
-        // Check if element supports AXSelectedText (is it writable?)
-        var writable: DarwinBoolean = false
-        AXUIElementIsAttributeSettable(element as! AXUIElement, kAXSelectedTextAttribute as CFString, &writable)
-        guard writable.boolValue else {
-            log("  AXSelectedText: not writable")
-            return false
-        }
-
-        let axElement = element as! AXUIElement
-        let setResult = AXUIElementSetAttributeValue(
-            axElement,
-            kAXSelectedTextAttribute as CFString,
-            text as CFTypeRef
-        )
-
-        return setResult == .success
     }
 
-    // MARK: - Strategy 2: Menu-based paste
+    static func captureTarget() -> NSRunningApplication? {
+        deliveryGeneration += 1 // A new dictation cancels an older pending paste.
+        remember(NSWorkspace.shared.frontmostApplication)
+        guard let app = lastExternalApp, !app.isTerminated else { return nil }
+        return app
+    }
 
-    private static func performPasteViaMenu() -> Bool {
-        guard let frontApp = NSWorkspace.shared.frontmostApplication else { return false }
-        let appElement = AXUIElementCreateApplication(frontApp.processIdentifier)
+    /// Paste once through the app's normal keyboard path, never through AXSelectedText.
+    /// Some browser/Electron fields accept an AX write without inserting the text.
+    static func pasteText(_ text: String, recordedTarget: NSRunningApplication?,
+                          completion: @escaping (Outcome) -> Void) {
+        deliveryGeneration += 1
+        let generation = deliveryGeneration
+        let board = NSPasteboard.general
+        board.clearContents()
+        guard board.setString(text, forType: .string) else { completion(.clipboardChanged); return }
+        let clipboardVersion = board.changeCount
+        let front = NSWorkspace.shared.frontmostApplication
+        let recorded = recordedTarget?.isTerminated == false ? recordedTarget : nil
+        let pid = PasteDeliveryPolicy.destination(frontmost: front?.processIdentifier,
+            recorded: recorded?.processIdentifier, ownPID: ProcessInfo.processInfo.processIdentifier)
+        guard let pid, let target = NSRunningApplication(processIdentifier: pid),
+              AXIsProcessTrusted() else { completion(.copied); return }
 
-        var menuBar: AnyObject?
-        guard AXUIElementCopyAttributeValue(
-            appElement, kAXMenuBarAttribute as CFString, &menuBar
-        ) == .success else {
-            log("  No menu bar")
-            return false
+        // Restore focus only if Vaani took it. If the user selected another app,
+        // the destination is that app's current cursor, not an old text field.
+        if front?.processIdentifier != pid {
+            guard target.activate(options: []) else { completion(.copied); return }
         }
+        attemptPaste(target: target, clipboardVersion: clipboardVersion, generation: generation, attemptsLeft: 30, completion: completion)
+    }
 
-        var menus: AnyObject?
-        guard AXUIElementCopyAttributeValue(
-            menuBar as! AXUIElement, kAXChildrenAttribute as CFString, &menus
-        ) == .success, let menuArray = menus as? [AXUIElement] else { return false }
-
-        for menu in menuArray {
-            var submenuList: AnyObject?
-            AXUIElementCopyAttributeValue(menu, kAXChildrenAttribute as CFString, &submenuList)
-            guard let submenus = submenuList as? [AXUIElement] else { continue }
-
-            for submenu in submenus {
-                var items: AnyObject?
-                AXUIElementCopyAttributeValue(submenu, kAXChildrenAttribute as CFString, &items)
-                guard let itemArray = items as? [AXUIElement] else { continue }
-
-                for item in itemArray {
-                    var cmdChar: AnyObject?
-                    AXUIElementCopyAttributeValue(
-                        item, kAXMenuItemCmdCharAttribute as CFString, &cmdChar
-                    )
-
-                    if let charStr = cmdChar as? String, charStr.lowercased() == "v" {
-                        var modifiers: AnyObject?
-                        AXUIElementCopyAttributeValue(
-                            item, kAXMenuItemCmdModifiersAttribute as CFString, &modifiers
-                        )
-                        let mod = modifiers as? Int ?? 0
-                        if mod == 0 {
-                            let r = AXUIElementPerformAction(item, kAXPressAction as CFString)
-                            log("  Paste menu: action result \(r == .success ? "OK" : "FAIL(\(r.rawValue))")")
-                            return r == .success
-                        }
-                    }
-                }
+    private static func attemptPaste(target: NSRunningApplication, clipboardVersion: Int,
+                                     generation: Int, attemptsLeft: Int, completion: @escaping (Outcome) -> Void) {
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+            guard generation == deliveryGeneration else { return }
+            let held: CGEventFlags = [.maskControl, .maskCommand, .maskAlternate, .maskShift, .maskSecondaryFn]
+            let decision = PasteDeliveryPolicy.delivery(
+                trusted: AXIsProcessTrusted(), targetAlive: !target.isTerminated,
+                focused: NSWorkspace.shared.frontmostApplication?.processIdentifier == target.processIdentifier,
+                modifiersHeld: !CGEventSource.flagsState(.combinedSessionState).intersection(held).isEmpty,
+                clipboardUnchanged: NSPasteboard.general.changeCount == clipboardVersion,
+                attemptsLeft: attemptsLeft)
+            switch decision {
+            case .wait:
+                attemptPaste(target: target, clipboardVersion: clipboardVersion,
+                             generation: generation, attemptsLeft: attemptsLeft - 1, completion: completion)
+            case .copied: completion(.copied)
+            case .clipboardChanged: completion(.clipboardChanged)
+            case .send: sendPaste(to: target.processIdentifier, clipboardVersion: clipboardVersion, generation: generation, completion: completion)
             }
         }
-
-        log("  Paste menu item not found")
-        return false
     }
 
-    // MARK: - Strategy 3: CGEvent Cmd+V
-
-    private static func simulateCmdV() {
-        // Post to cgSessionEventTap (bypasses our HID-level fn key monitor tap)
-        guard let vDown = CGEvent(keyboardEventSource: nil, virtualKey: 0x09, keyDown: true),
-              let vUp = CGEvent(keyboardEventSource: nil, virtualKey: 0x09, keyDown: false) else {
-            return
+    private static func sendPaste(to pid: pid_t, clipboardVersion: Int, generation: Int, completion: @escaping (Outcome) -> Void) {
+        // Private event state avoids inheriting the dictation trigger's Control flag.
+        guard let source = CGEventSource(stateID: .privateState),
+              let commandDown = CGEvent(keyboardEventSource: source, virtualKey: 0x37, keyDown: true),
+              let vDown = CGEvent(keyboardEventSource: source, virtualKey: 0x09, keyDown: true),
+              let vUp = CGEvent(keyboardEventSource: source, virtualKey: 0x09, keyDown: false),
+              let commandUp = CGEvent(keyboardEventSource: source, virtualKey: 0x37, keyDown: false) else {
+            completion(.copied); return
         }
-
+        commandDown.flags = .maskCommand
         vDown.flags = .maskCommand
         vUp.flags = .maskCommand
-
-        vDown.post(tap: .cgSessionEventTap)
-        vUp.post(tap: .cgSessionEventTap)
-    }
-
-    // MARK: - Logging (debug builds only)
-
-    private static func log(_ message: String) {
-        #if DEBUG
-        NSLog("[Vaani Paste] %@", message)
-        #endif
+        commandUp.flags = []
+        commandDown.postToPid(pid)
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.02) {
+            guard generation == deliveryGeneration,
+                  NSWorkspace.shared.frontmostApplication?.processIdentifier == pid,
+                  NSPasteboard.general.changeCount == clipboardVersion else {
+                commandUp.postToPid(pid)
+                completion(.copied)
+                return
+            }
+            vDown.postToPid(pid)
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.02) {
+                vUp.postToPid(pid)
+                commandUp.postToPid(pid)
+                // Posting events is not proof that every third-party editor accepted them.
+                completion(.sent)
+            }
+        }
     }
 }

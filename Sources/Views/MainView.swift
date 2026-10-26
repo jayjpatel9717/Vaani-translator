@@ -126,7 +126,7 @@ struct MainView: View {
     private var holdHint: some View {
         HStack(spacing: 5) {
             Text("Hold")
-            if viewModel.useFnKey { Keycap(text: "fn", theme: theme) } else { Text("your shortcut") }
+            if let label = viewModel.holdKeyLabel { Keycap(text: label, theme: theme) } else { Text("your shortcut") }
             Text("and speak")
         }
         .font(.glass(11, .bold))
@@ -191,7 +191,7 @@ struct MainView: View {
             Spacer().frame(height: 6)
             HStack(spacing: 5) {
                 Text("Release")
-                if viewModel.useFnKey { Keycap(text: "fn", theme: theme) } else { Text("the shortcut") }
+                if let label = viewModel.holdKeyLabel { Keycap(text: label, theme: theme) } else { Text("the shortcut") }
                 Text("when you\u{2019}re done")
             }
             .font(.glass(11, .bold)).foregroundColor(theme.secondary).frame(height: 18)
@@ -256,7 +256,7 @@ struct MainView: View {
             Spacer().frame(height: 16)
             HStack(spacing: 5) {
                 Text("Hold")
-                if viewModel.useFnKey { Keycap(text: "fn", theme: theme) } else { Text("your shortcut") }
+                if let label = viewModel.holdKeyLabel { Keycap(text: label, theme: theme) } else { Text("your shortcut") }
                 Text("to speak again")
             }
             .font(.glass(11, .bold)).foregroundColor(theme.secondary).frame(height: 18)

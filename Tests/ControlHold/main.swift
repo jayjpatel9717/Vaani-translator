@@ -1,0 +1,27 @@
+func check(_ condition: @autoclosure () -> Bool, _ message: String) {
+    precondition(condition(), message)
+}
+var g = ControlHoldGesture()
+check(g.update(control: true, otherModifier: false, keyDown: false) == .schedule, "schedule hold")
+check(g.update(control: false, otherModifier: false, keyDown: false) == .none, "quick tap does not record")
+check(g.heldLongEnough() == .none, "released key cannot start later")
+_ = g.update(control: true, otherModifier: false, keyDown: false)
+check(g.heldLongEnough() == .start, "long hold starts")
+check(g.heldLongEnough() == .none, "no duplicate start")
+check(g.update(control: false, otherModifier: false, keyDown: false) == .finish, "release finishes")
+for modifier in [false, true] {
+    _ = g.update(control: true, otherModifier: false, keyDown: false)
+    check(g.update(control: true, otherModifier: modifier, keyDown: !modifier) == .none, "chord before threshold")
+    check(g.heldLongEnough() == .none, "chord does not record")
+    check(g.update(control: true, otherModifier: false, keyDown: false) == .none, "wait for complete release")
+    _ = g.update(control: false, otherModifier: false, keyDown: false)
+    _ = g.update(control: true, otherModifier: false, keyDown: false)
+    _ = g.heldLongEnough()
+    check(g.update(control: true, otherModifier: modifier, keyDown: !modifier) == .cancel, "chord after threshold cancels")
+    check(g.update(control: false, otherModifier: false, keyDown: false) == .none, "canceled audio never submits")
+}
+_ = g.update(control: true, otherModifier: false, keyDown: false)
+_ = g.heldLongEnough()
+check(g.reset() == .cancel, "disable/tap failure cancels recording")
+check(g.update(control: false, otherModifier: false, keyDown: false) == .none, "no submission after reset")
+print("Control hold: tap, hold, release, chord suppression, cancellation and reset passed")

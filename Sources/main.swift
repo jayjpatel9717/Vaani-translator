@@ -77,10 +77,13 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     var viewModel: TranslatorViewModel!
     var eventMonitor: Any?
     var fnKeyMonitor: FnKeyMonitor?
+    var controlKeyMonitor: ControlKeyMonitor?
+    var controlOwnsRecording = false
     var hud: StatusHUD?
     var cancellables = Set<AnyCancellable>()
 
     func applicationDidFinishLaunching(_ notification: Notification) {
+        PasteboardManager.startTrackingFocus()
         NSApp.setActivationPolicy(.accessory)
 
         Task { @MainActor in
@@ -154,6 +157,40 @@ class AppDelegate: NSObject, NSApplicationDelegate {
                 self?.updateStatusIcon(recording: false)
             }
         }
+
+        controlKeyMonitor = ControlKeyMonitor()
+        controlKeyMonitor?.onDown = { [weak self] in
+            Task { @MainActor in
+                guard let self, !self.viewModel.isRecording, !self.viewModel.isProcessing,
+                      !(self.popover?.isShown == true && self.viewModel.showSettings) else { return }
+                self.controlOwnsRecording = true
+                self.popover?.performClose(nil)
+                self.viewModel.startRecording()
+                self.updateStatusIcon(recording: true)
+            }
+        }
+        controlKeyMonitor?.onUp = { [weak self] in
+            Task { @MainActor in
+                guard let self, self.controlOwnsRecording else { return }
+                self.controlOwnsRecording = false
+                self.viewModel.stopRecording()
+                self.updateStatusIcon(recording: false)
+            }
+        }
+        controlKeyMonitor?.onCancel = { [weak self] in
+            Task { @MainActor in
+                guard let self, self.controlOwnsRecording else { return }
+                self.controlOwnsRecording = false
+                self.viewModel.cancelRecording()
+                self.updateStatusIcon(recording: false)
+            }
+        }
+        viewModel.$useControlKey
+            .sink { [weak self] enabled in
+                if enabled { self?.controlKeyMonitor?.start() }
+                else { self?.controlKeyMonitor?.stop() }
+            }
+            .store(in: &cancellables)
 
         // Floating status pill (Listening / Translating / Pasted / error)
         let hud = StatusHUD()

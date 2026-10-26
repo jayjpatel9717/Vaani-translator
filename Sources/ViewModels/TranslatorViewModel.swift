@@ -1,4 +1,5 @@
 import Foundation
+import AppKit
 import Combine
 import SwiftUI
 import AVFoundation
@@ -18,7 +19,13 @@ class TranslatorViewModel: ObservableObject {
     @Published var showSettings = false
     @Published var apiKey: String = ""
     @Published var audioLevel: Float = 0.0
-    @Published var useFnKey: Bool = false
+    @Published var useFnKey: Bool = false {
+        didSet { if useFnKey { useControlKey = false } }
+    }
+    @Published var useControlKey: Bool = false {
+        didSet { if useControlKey { useFnKey = false } }
+    }
+    var holdKeyLabel: String? { useControlKey ? "ctrl" : (useFnKey ? "fn" : nil) }
     @Published var appearanceMode: AppearanceMode = .system
     @Published var history: [HistoryItem] = []
     @Published var accessibilityGranted: Bool = false
@@ -33,6 +40,8 @@ class TranslatorViewModel: ObservableObject {
     private let audioRecorder = AudioRecorder()
     private let apiClient = SaarasAPIClient()
     private let keychainManager = KeychainManager()
+    private var recordingGeneration = 0
+    private var recordingPasteTarget: NSRunningApplication?
     private var recordingURL: URL?
     @Published private(set) var recordingStartTime: Date?
     private var cancellables = Set<AnyCancellable>()
@@ -71,6 +80,8 @@ class TranslatorViewModel: ObservableObject {
             useFnKey = UserDefaults.standard.bool(forKey: "useFnKey")
         }
 
+        useControlKey = UserDefaults.standard.bool(forKey: "useControlKey")
+
         // Load appearance preference
         if let saved = UserDefaults.standard.string(forKey: "appearanceMode"),
            let mode = AppearanceMode(rawValue: saved) {
@@ -81,6 +92,11 @@ class TranslatorViewModel: ObservableObject {
         $useFnKey
             .dropFirst()
             .sink { UserDefaults.standard.set($0, forKey: "useFnKey") }
+            .store(in: &cancellables)
+
+        $useControlKey
+            .dropFirst()
+            .sink { UserDefaults.standard.set($0, forKey: "useControlKey") }
             .store(in: &cancellables)
 
         // Persist appearance preference on change
@@ -112,10 +128,13 @@ class TranslatorViewModel: ObservableObject {
 
     func startRecording() {
         guard !isRecording && !isProcessing else { return }
+        recordingPasteTarget = PasteboardManager.captureTarget()
+        recordingGeneration += 1
+        let generation = recordingGeneration
         apiClient.warmUp()
 
         audioRecorder.requestMicPermission { [weak self] granted in
-            guard let self = self else { return }
+            guard let self = self, self.recordingGeneration == generation else { return }
             self.micGranted = granted
             if granted {
                 do {
@@ -135,6 +154,7 @@ class TranslatorViewModel: ObservableObject {
     }
 
     func stopRecording() {
+        recordingGeneration += 1
         guard isRecording else { return }
 
         // Check minimum recording duration (0.5s) to avoid "Audio duration is 0" errors
@@ -154,6 +174,16 @@ class TranslatorViewModel: ObservableObject {
 
         recordingURL = url
         processRecording()
+    }
+
+    // A Control chord cancels the hold gesture without uploading or pasting audio.
+    func cancelRecording() {
+        recordingGeneration += 1
+        _ = audioRecorder.stopRecording()
+        audioRecorder.cleanup()
+        recordingURL = nil
+        recordingStartTime = nil
+        hudState = .hidden
     }
 
     private func processRecording() {
@@ -196,6 +226,7 @@ class TranslatorViewModel: ObservableObject {
         let key = apiKey
         let client = apiClient
         let recorder = audioRecorder
+        let pasteTarget = recordingPasteTarget
 
         // Run ENTIRE pipeline off main thread to prevent UI freeze
         Task.detached {
@@ -225,8 +256,6 @@ class TranslatorViewModel: ObservableObject {
 
                     if result.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
                         self.hudState = .error("Nothing heard \u{2014} speak louder or raise input volume")
-                    } else {
-                        self.hudState = .done(self.accessibilityGranted ? "Pasted" : "Copied \u{2014} press \u{2318}V to paste")
                     }
 
                     // Save to history + auto-paste only if non-empty
@@ -242,7 +271,11 @@ class TranslatorViewModel: ObservableObject {
                             self.history = Array(self.history.prefix(5))
                         }
 
-                        PasteboardManager.pasteText(result.text)
+                        PasteboardManager.pasteText(result.text, recordedTarget: pasteTarget) { [weak self] outcome in
+                            guard let self, !self.isRecording, !self.isProcessing else { return }
+                            self.accessibilityGranted = PasteboardManager.hasAccessibilityPermission()
+                            self.hudState = .done(outcome.message)
+                        }
                     }
                 }
 

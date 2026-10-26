@@ -24,11 +24,22 @@ struct SettingsView: View {
 
             VStack(spacing: 8) {
                 keyCard
-                row("Hold to speak", sub: "Click to record a new shortcut") {
+                row("Key combination", sub: "Record a key with modifiers") {
                     KeyboardShortcuts.Recorder(for: .record).controlSize(.small)
                 }
-                row("fn / globe key", sub: "Hold fn anywhere to speak") {
-                    Toggle("", isOn: $viewModel.useFnKey).toggleStyle(.switch).controlSize(.small).labelsHidden().tint(AppTheme.violet)
+                row("Hold key", sub: "Hold one key alone to speak") {
+                    Picker("Hold key", selection: Binding(
+                        get: { viewModel.useControlKey ? "control" : (viewModel.useFnKey ? "fn" : "off") },
+                        set: { value in
+                            viewModel.useFnKey = value == "fn"
+                            viewModel.useControlKey = value == "control"
+                        }
+                    )) {
+                        Text("Off").tag("off")
+                        Text("Fn / Globe").tag("fn")
+                        Text("Control").tag("control")
+                    }
+                    .labelsHidden().pickerStyle(.menu).controlSize(.small).frame(width: 110)
                 }
                 row("Type for me", sub: viewModel.accessibilityGranted ? "Accessibility granted" : "Needs Accessibility permission") {
                     if viewModel.accessibilityGranted {

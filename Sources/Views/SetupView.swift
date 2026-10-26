@@ -57,7 +57,7 @@ struct SetupView: View {
                         }
                     }
                 }
-                step(4, "Try it", sub: tried ? "\u{201C}\(viewModel.lastResult)\u{201D}" : (viewModel.useFnKey ? "Hold fn, say something, let go" : "Hold your shortcut, say something, let go"), done: tried) {
+                step(4, "Try it", sub: tried ? "\u{201C}\(viewModel.lastResult)\u{201D}" : (viewModel.holdKeyLabel != nil ? "Hold \(viewModel.holdKeyLabel!), say something, let go" : "Hold your shortcut, say something, let go"), done: tried) {
                     EmptyView()
                 }
             }
