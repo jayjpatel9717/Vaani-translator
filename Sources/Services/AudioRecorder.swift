@@ -9,6 +9,9 @@ class AudioRecorder: NSObject, ObservableObject {
     private static let targetFormat = AVAudioFormat(commonFormat: .pcmFormatInt16, sampleRate: 16000, channels: 1, interleaved: true)!
     private var recordingURL: URL?
 
+    // Engine state is authoritative; published UI state is delivered asynchronously.
+    var isActive: Bool { audioEngine?.isRunning == true }
+
     @Published var isRecording = false
     @Published var audioLevel: Float = 0.0
 

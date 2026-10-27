@@ -127,7 +127,7 @@ class TranslatorViewModel: ObservableObject {
     }
 
     func startRecording() {
-        guard !isRecording && !isProcessing else { return }
+        guard !audioRecorder.isActive && !isProcessing else { return }
         recordingPasteTarget = PasteboardManager.captureTarget()
         recordingGeneration += 1
         let generation = recordingGeneration
@@ -155,7 +155,7 @@ class TranslatorViewModel: ObservableObject {
 
     func stopRecording() {
         recordingGeneration += 1
-        guard isRecording else { return }
+        guard audioRecorder.isActive else { return }
 
         // Check minimum recording duration (0.5s) to avoid "Audio duration is 0" errors
         if let start = recordingStartTime, Date().timeIntervalSince(start) < 0.5 {
